@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ReviewCard } from "./components/ReviewCard";
 import { TaskList } from "./components/TaskList";
 import { captureFromImage, captureFromShare, NothingToRead, reviewFromText } from "./lib/capture";
@@ -34,6 +34,11 @@ export function App() {
   const [note, setNote] = useState<string>();
   const [draft, setDraft] = useState("");
   const [samples, setSamples] = useState<Sample[]>([]);
+  // A share is readable until it is cleared, and three separate things go
+  // looking for one — the mount check, the native event, and coming back to
+  // the foreground. Without this, two of them read the same share before
+  // either clears it and the same capture is queued twice.
+  const handlingShare = useRef(false);
   const [collecting, setCollecting] = useState(isCollectingSamples);
 
   const refresh = useCallback(async (from: TaskStore) => {
@@ -50,15 +55,20 @@ export function App() {
   /**
    * Keep anything with something to teach.
    *
-   * Silent by design: the point of collecting in bulk is that it costs the
-   * user nothing at the moment of capture.
+   * Silent by design, and unable to fail loudly: a diagnostic must never be
+   * able to break the thing it is diagnosing. Losing one sample costs a future
+   * fixture; letting the write throw would cost the user their task.
    */
   const remember = useCallback(
     async (from: TaskStore, review: PendingReview, outcome: "kept" | "dismissed", finalText?: string) => {
       if (!isCollectingSamples()) return;
       const verdict = verdictFor(review, outcome, finalText);
       if (!verdict) return;
-      await from.addSample(sampleFrom(review, verdict, finalText));
+      try {
+        await from.addSample(sampleFrom(review, verdict, finalText));
+      } catch (error) {
+        console.error("Could not keep that capture for later.", error);
+      }
     },
     [],
   );
@@ -83,7 +93,8 @@ export function App() {
 
   const acceptShare = useCallback(
     async (payload: SharePayload) => {
-      if (!store) return;
+      if (!store || handlingShare.current) return;
+      handlingShare.current = true;
       setBusy(true);
       try {
         const review = await captureFromShare(payload);
@@ -96,6 +107,7 @@ export function App() {
         await clearShared();
         setNote(error instanceof NothingToRead ? "Nothing to read in that." : "That didn't work.");
       } finally {
+        handlingShare.current = false;
         setBusy(false);
       }
     },
@@ -111,6 +123,7 @@ export function App() {
     let cancelled = false;
 
     const check = async () => {
+      if (handlingShare.current) return;
       const payload = await takeShared();
       if (payload && !cancelled) await acceptShare(payload);
     };
@@ -155,47 +168,78 @@ export function App() {
     if (!store) return;
     const text = draft.trim();
     if (!text) return;
+    // A typed line is always worth keeping, even if nothing could be read from it.
+    let proposed = { text, dueAt: undefined as number | undefined };
     try {
       const review = reviewFromText(text, "manual");
-      await store.addTask({ text: review.proposedText, source: "manual", dueAt: review.proposedDueAt });
+      proposed = { text: review.proposedText, dueAt: review.proposedDueAt };
     } catch {
-      // A typed line is always worth keeping, even if nothing could be read from it.
-      await store.addTask({ text, source: "manual" });
+      // Nothing readable in it; keep exactly what was typed.
     }
-    setDraft("");
+    try {
+      await store.addTask({ text: proposed.text, source: "manual", dueAt: proposed.dueAt });
+      setDraft("");
+    } catch (error) {
+      // The draft stays in the box, so nothing typed is lost.
+      console.error("Could not add that task.", error);
+      setNote("Couldn't save that. Try again.");
+    }
     await refresh(store);
   }
 
   async function confirm(review: PendingReview, text: string) {
     if (!store) return;
-    await remember(store, review, "kept", text);
-    await store.addTask({
-      text,
-      source: review.source,
-      dueAt: review.proposedDueAt,
-      rawText: review.rawText,
-      imagePath: review.imagePath,
-    });
-    await store.removePending(review.id);
+    try {
+      // The task first. Keeping the capture for later is worth nothing if the
+      // thing the user actually asked for did not happen.
+      await store.addTask({
+        text,
+        source: review.source,
+        dueAt: review.proposedDueAt,
+        rawText: review.rawText,
+        imagePath: review.imagePath,
+      });
+      await remember(store, review, "kept", text);
+      await store.removePending(review.id);
+    } catch (error) {
+      // A tap that appears to do nothing is worse than a tap that says why.
+      console.error("Could not keep that task.", error);
+      setNote("Couldn't save that. Try again.");
+    }
     await refresh(store);
   }
 
   async function dismiss(review: PendingReview) {
     if (!store) return;
-    await remember(store, review, "dismissed");
-    await store.removePending(review.id);
+    try {
+      await remember(store, review, "dismissed");
+      await store.removePending(review.id);
+    } catch (error) {
+      console.error("Could not dismiss that.", error);
+      setNote("Couldn't do that. Try again.");
+    }
     await refresh(store);
   }
 
   async function toggle(task: Task) {
     if (!store) return;
-    await store.setDone(task.id, !task.done);
+    try {
+      await store.setDone(task.id, !task.done);
+    } catch (error) {
+      console.error("Could not change that task.", error);
+      setNote("Couldn't save that.");
+    }
     await refresh(store);
   }
 
   async function remove(task: Task) {
     if (!store) return;
-    await store.removeTask(task.id);
+    try {
+      await store.removeTask(task.id);
+    } catch (error) {
+      console.error("Could not remove that task.", error);
+      setNote("Couldn't remove that.");
+    }
     await refresh(store);
   }
 
@@ -211,7 +255,11 @@ export function App() {
 
   async function forgetSamples() {
     if (!store) return;
-    await store.clearSamples();
+    try {
+      await store.clearSamples();
+    } catch (error) {
+      console.error("Could not clear the capture log.", error);
+    }
     await refresh(store);
   }
 

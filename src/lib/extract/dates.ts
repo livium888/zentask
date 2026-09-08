@@ -112,28 +112,53 @@ function findTimes(text: string): Array<{ minutes: number; index: number; raw: s
     found.push({ minutes: resolved * 60 + minute, index, raw });
   };
 
+  // A reading, plus whatever character had to be matched in front of it so
+  // that a dotted date is not mistaken for a clock. Written as a capture
+  // rather than a lookbehind: lookbehind is a syntax error on WebViews older
+  // than Chrome 62, and a syntax error stops the whole bundle evaluating —
+  // a blank app instead of one missing feature.
+  type TimeRead = { hour: string; minute: string; meridiem?: string; lead?: string };
+
   // Most specific first, so a range is read before its halves.
-  const patterns: Array<[RegExp, (m: RegExpMatchArray) => [string, string, string | undefined] | undefined]> = [
+  const patterns: Array<[RegExp, (m: RegExpMatchArray) => TimeRead | undefined]> = [
     // "430-730PM" — a range on a poster. The meridiem governs the start time.
-    [/\b(\d{1,2})(\d{2})\s*[-–]\s*\d{1,4}\s*(am|pm)\b/gi, (m) => (m[1] && m[2] ? [m[1], m[2], m[3]] : undefined)],
-    // "14:30", "2.30pm". The lookarounds stop a dotted date being read as a
-    // clock: "06.09.2026" is the sixth of September, not nine minutes past six.
-    [/(?<![\d.])(\d{1,2})[:.](\d{2})(?![\d.])\s*(am|pm)?/gi, (m) => (m[1] && m[2] ? [m[1], m[2], m[3]] : undefined)],
+    [
+      /\b(\d{1,2})(\d{2})\s*[-–]\s*\d{1,4}\s*(am|pm)\b/gi,
+      (m) => (m[1] && m[2] ? { hour: m[1], minute: m[2], meridiem: m[3] } : undefined),
+    ],
+    // "14:30", "2.30pm". "06.09.2026" is a date, not nine minutes past six.
+    [
+      /(^|[^\d.])(\d{1,2})[:.](\d{2})(?![\d.])\s*(am|pm)?/gi,
+      (m) => (m[2] && m[3] ? { hour: m[2], minute: m[3], meridiem: m[4], lead: m[1] } : undefined),
+    ],
     // "730PM" — no colon. A meridiem is required, which keeps years and
     // account numbers out of the results.
-    [/\b(\d{1,2})(\d{2})\s*(am|pm)\b/gi, (m) => (m[1] && m[2] ? [m[1], m[2], m[3]] : undefined)],
+    [
+      /\b(\d{1,2})(\d{2})\s*(am|pm)\b/gi,
+      (m) => (m[1] && m[2] ? { hour: m[1], minute: m[2], meridiem: m[3] } : undefined),
+    ],
     // "3pm"
-    [/\b(\d{1,2})\s*(am|pm)\b/gi, (m) => (m[1] ? [m[1], "0", m[2]] : undefined)],
+    [/\b(\d{1,2})\s*(am|pm)\b/gi, (m) => (m[1] ? { hour: m[1], minute: "0", meridiem: m[2] } : undefined)],
     // "TIME: 1100" on a form or an invitation. The label is what makes four
     // bare digits a clock rather than a reference number.
-    [/\btime\s*[:.]?\s*(\d{1,2})(\d{2})\b/gi, (m) => (m[1] && m[2] ? [m[1], m[2], undefined] : undefined)],
+    [
+      /\btime\s*[:.]?\s*(\d{1,2})(\d{2})\b/gi,
+      (m) => (m[1] && m[2] ? { hour: m[1], minute: m[2] } : undefined),
+    ],
   ];
 
   for (const [pattern, read] of patterns) {
     for (const m of text.matchAll(pattern)) {
       const parts = read(m);
       if (!parts) continue;
-      add(Number(parts[0]), Number(parts[1]), parts[2], m.index, m[0]);
+      const lead = parts.lead ?? "";
+      add(
+        Number(parts.hour),
+        Number(parts.minute),
+        parts.meridiem,
+        m.index + lead.length,
+        m[0].slice(lead.length),
+      );
     }
   }
 

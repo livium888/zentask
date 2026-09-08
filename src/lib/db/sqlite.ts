@@ -135,6 +135,29 @@ function toSample(row: SampleRow): Sample {
   };
 }
 
+/**
+ * Columns added after a release shipped.
+ *
+ * `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists, so
+ * a column added to the schema never reaches a phone that installed an earlier
+ * build — and the very next INSERT fails with "no such column". Upgrading is
+ * the normal case for anyone already using the app, so it has to be handled
+ * explicitly rather than assumed away.
+ */
+const ADDED_COLUMNS: Array<{ table: string; column: string; type: string }> = [
+  { table: "pending", column: "recipe", type: "TEXT" },
+];
+
+async function migrate(db: SQLiteDBConnection): Promise<void> {
+  for (const { table, column, type } of ADDED_COLUMNS) {
+    const info = await db.query(`PRAGMA table_info(${table})`);
+    const present = (info.values ?? []).some(
+      (row) => (row as { name?: string }).name === column,
+    );
+    if (!present) await db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, []);
+  }
+}
+
 export function createSqliteStore(): TaskStore {
   const sqlite = new SQLiteConnection(CapacitorSQLite);
   let db: SQLiteDBConnection | undefined;
@@ -147,6 +170,7 @@ export function createSqliteStore(): TaskStore {
       : await sqlite.createConnection(DB, false, "no-encryption", 1, false);
     await db.open();
     await db.execute(SCHEMA);
+    await migrate(db);
     return db;
   }
 
