@@ -233,6 +233,29 @@ Our next Open Event is on Wednesday 30th September
     expect(new Date(out.dueAt!).getHours()).toBe(16);
   });
 
+  it("names who an event is for, not just what it is", () => {
+    const ocr = `OPEN THE RIVERSIDE ACADEMY DOORS
+Our next Open Evening is on 30/09/2026 at 18:00`;
+    const out = extractTask(ocr, { now: NOW })!;
+    expect(out.recipe).toBe("event");
+    expect(out.title).toContain("Open Evening");
+    // "Open Evening — Thu 30 Sept" alone gives you nothing to act on.
+    expect(out.title).toContain("RIVERSIDE ACADEMY");
+  });
+
+  it("trims a headline down to the name buried inside it", () => {
+    const ocr = `WELCOME TO ST MARY'S SCHOOL WISDOM AND FAVOUR
+Open Day 30/09/2026 at 10:00`;
+    expect(extractTask(ocr, { now: NOW })!.title).toContain("ST MARY'S SCHOOL");
+  });
+
+  it("still names the practice on an appointment card", () => {
+    const ocr = `RIVERSIDE DENTAL
+Your next appointment
+Thursday 10 Sep at 14:30`;
+    expect(extractTask(ocr, { now: NOW })!.title).toContain("RIVERSIDE DENTAL");
+  });
+
   it("does not call an undated flyer an event", () => {
     expect(extractTask("SAVE THE DATE\nOpen Evening coming soon", { now: NOW })!.recipe).not.toBe(
       "event",

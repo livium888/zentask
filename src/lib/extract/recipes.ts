@@ -60,25 +60,80 @@ const TIME_FORMAT: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-di
 
 export function describeDate(match: DateMatch): string {
   const date = new Date(match.at);
-  const day = date.toLocaleDateString("en-GB", DATE_FORMAT);
+  const day = date.toLocaleDateString("en-GB", DATE_FORMAT).replace(",", "");
   if (!match.hasTime) return day;
   return `${day} ${date.toLocaleTimeString("en-GB", TIME_FORMAT)}`;
 }
 
+/** Words that end an organisation's name, and mark where it stops. */
+const INSTITUTION =
+  "school|academy|college|university|nursery|clinic|surgery|dental|dentist|practice|" +
+  "hospital|pharmacy|opticians|vets|veterinary|centre|center|church|chapel|trust|" +
+  "society|club|gym|studio|salon|garage|insurance|bank|council|library|museum|" +
+  "theatre|gallery|ltd|limited|plc|llp";
+
+const INSTITUTION_WORD = new RegExp(`\\b(?:${INSTITUTION})\\b`, "i");
+const NAME_UP_TO_INSTITUTION = new RegExp(`^(.*?\\b(?:${INSTITUTION}))\\b`, "i");
+
+/** Words that announce something rather than name anyone. */
+const NOT_A_NAME = /^(open|save|the|a|welcome|new|our|your|next|come|join|free|book|now|today|hello|hi|from)$/i;
+
+const PRINTED_IN_CAPS = /^[A-Z0-9 &'’.\-]+$/;
+
+/** A name is rarely longer than this; anything more is a sentence. */
+const MAX_NAME_WORDS = 5;
+
 /**
- * The line most likely to name who this is from.
+ * Trim a line down to the name it contains.
  *
- * Brands sit at the top of a receipt or letterhead and are usually the widest
- * run of capitals or title case. Lines that are mostly digits are addresses,
- * card numbers, or till codes, never the sender.
+ * "OPEN THEKING'S SCHOOL WISDOM STATURE FAVOUR" is a poster headline with a
+ * school's name buried in it. Cutting at the institution word and dropping the
+ * words that announce an event leaves the part that identifies anyone.
  */
+function cleanName(line: string): string | undefined {
+  const upToInstitution = line.match(NAME_UP_TO_INSTITUTION)?.[1] ?? line;
+  let words = upToInstitution.trim().split(/\s+/);
+  while (words.length > 1 && NOT_A_NAME.test(words[0] ?? "")) words = words.slice(1);
+  // The words nearest the institution word are the name; anything before is
+  // whatever the line was saying beforehand.
+  if (words.length > MAX_NAME_WORDS) words = words.slice(-MAX_NAME_WORDS);
+  const name = words.join(" ").replace(/[.,;:]+$/, "");
+  return name.length >= 3 ? name : undefined;
+}
+
+/**
+ * How likely a line is to name who a capture is from.
+ *
+ * An earlier version took the first short line printed in capitals, which on a
+ * poster is a fragment — it picked "EVENING" out of a school's open evening —
+ * and only ever looked at the top of the page, where a screenshot has an app's
+ * interface rather than a letterhead.
+ */
+function scoreName(line: string, index: number): number {
+  const words = line.trim().split(/\s+/).length;
+  let score = 0;
+  if (INSTITUTION_WORD.test(line)) score += 10;
+  if (words >= 2 && words <= 5) score += 3;
+  if (words === 1) score -= 2;
+  if (index < 6) score += 2; // a letterhead sits at the top
+  if (PRINTED_IN_CAPS.test(line)) score += 1;
+  if (line.length > 45) score -= 3;
+  return score;
+}
+
 function subject(lines: string[]): string | undefined {
-  const candidates = lines.slice(0, 6).filter((line) => {
+  let best: { name: string; score: number } | undefined;
+
+  lines.forEach((line, index) => {
     const letters = line.replace(/[^a-z]/gi, "").length;
-    return letters >= 4 && letters / line.length > 0.5;
+    if (letters < 4 || letters / line.length <= 0.5) return;
+    const name = cleanName(line);
+    if (!name) return;
+    const score = scoreName(line, index);
+    if (!best || score > best.score) best = { name, score };
   });
-  const branded = candidates.find((line) => /^[A-Z0-9 &'.\-]+$/.test(line) && line.length <= 30);
-  return branded ?? candidates[0];
+
+  return best?.name;
 }
 
 function reference(text: string): string | undefined {
@@ -127,12 +182,15 @@ function titleCase(phrase: string): string {
     .join(" ");
 }
 
-const event: Recipe = ({ text, due }) => {
+const event: Recipe = ({ lines, text, due }) => {
   if (!EVENT_TRIGGER.test(text) || !due) return undefined;
   const named = text.match(EVENT_NAME)?.[0];
   const what = named ? titleCase(named) : "Event";
+  // "Open Event" on its own says nothing: whose open event, and where? The
+  // sender is the detail that makes the task answerable.
+  const who = subject(lines);
   return {
-    title: tidyTitle(`${what} — ${describeDate(due)}`),
+    title: tidyTitle(who ? `${what} — ${who}, ${describeDate(due)}` : `${what} — ${describeDate(due)}`),
     dueAt: due.at,
     // Without a time this is a date someone printed, not a plan.
     confidence: due.hasTime ? "high" : "low",

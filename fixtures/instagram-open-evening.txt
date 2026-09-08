@@ -2,7 +2,7 @@
 # now: 2026-09-08T18:45
 # status: enforced
 # expect-recipe: event
-# expect-title-contains: Open Event
+# expect-title-contains: Event — THEKING'S SCHOOL
 # expect-due: 2026-09-30
 #
 # A real capture. Three separate things go wrong on it:
@@ -11,6 +11,10 @@
 #   - the bare weekday "WEDNESDAY" wins over the explicit "30TH SEPTEMBER",
 #     which sits two lines below it, so the date lands three weeks early
 #   - "430-730PM" carries no colon, so no time is found at all
+#
+# A fourth, found later: "Open Event" on its own says nothing about whose. The
+# school's name is in the poster headline, buried between the word that
+# announces the event and three words of motto.
 ---
 18:45 18° ring l 82)
 Posts
