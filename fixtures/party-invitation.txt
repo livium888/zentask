@@ -1,0 +1,30 @@
+# name: party invitation
+# now: 2026-09-08T20:37
+# status: enforced
+# expect-recipe: event
+# expect-due: 2026-09-06
+#
+# Three separate faults, all fixed:
+#   - "06.09.2026" sat alone on a line and was deleted as a barcode
+#   - once kept, it was read as the time 06:09 rather than a date
+#   - "RSVP BY 14TH AUGUST" has a deadline cue, so it outranked the party
+#     itself; an event is the date carrying a time
+#
+# Still imperfect, and deliberately not asserted: the title names the venue
+# ("Mini Town, Locks") rather than the party, because "MAVA'S" and "PART!" are
+# single mangled words on separate lines and nothing here can reassemble them.
+---
+You're invited to
+MAVA'S
+PART!
+DATE:
+06.09.2026
+TIME:
+13:30-15:30
+LOCATION:
+Mini Town, Locks
+Heath, SO31 6DX
+PLEASE RSVP
+BY 14TH AUGUST
+TO 07808534308 |
+(Bex)

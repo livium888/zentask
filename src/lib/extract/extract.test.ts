@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { extractTask } from "./index";
 import { findDates, pickDueDate } from "./dates";
 import { findMoney, pickAmount } from "./money";
-import { toLines } from "./text";
+import { dropRepeatedPrefix, looksLikeConversation, toLines } from "./text";
 
 /** A fixed clock so "no year given" and "tomorrow" are deterministic. */
 const NOW = new Date(2026, 8, 8, 10, 0); // Tue 8 Sep 2026
@@ -11,6 +11,69 @@ describe("toLines", () => {
   it("drops barcode runs and single-glyph debris", () => {
     const lines = toLines("ACME LTD\n|||| ||| ||\n1234567890 12345\nA\nTotal £12.50");
     expect(lines).toEqual(["ACME LTD", "Total £12.50"]);
+  });
+});
+
+describe("a date standing on its own line", () => {
+  it("survives the barcode filter", () => {
+    // "06.09.2026" was being deleted as a long digit run, taking the only
+    // date on an invitation with it.
+    expect(toLines("DATE:\n06.09.2026\nTIME:")).toContain("06.09.2026");
+  });
+
+  it("is read as a date and not as the time 06:09", () => {
+    const [hit] = findDates("DATE:\n06.09.2026", { now: NOW });
+    expect(new Date(hit!.at).getDate()).toBe(6);
+    expect(hit!.hasTime).toBe(false);
+  });
+
+  it("still drops an actual digit run", () => {
+    expect(toLines("ACME\n4820119374882910")).toEqual(["ACME"]);
+  });
+});
+
+describe("a year the document states", () => {
+  it("governs a bare day and month rather than rolling forward", () => {
+    // An invitation dated 2026 that says "RSVP by 14th August" means that
+    // August, not the next one.
+    const dates = findDates("06.09.2026\nRSVP BY 14TH AUGUST", { now: NOW });
+    expect(dates.every((d) => new Date(d.at).getFullYear() === 2026)).toBe(true);
+  });
+
+  it("still rolls forward when the document states no year", () => {
+    const [hit] = findDates("Pay by 5 Jan", { now: new Date(2026, 11, 30) });
+    expect(new Date(hit!.at).getFullYear()).toBe(2027);
+  });
+});
+
+describe("conversations", () => {
+  it("recognises a message thread by its run of timestamps", () => {
+    expect(looksLikeConversation("Paul\n17:48\nhi\n07:59\nyep\n08:03\nsee you")).toBe(true);
+  });
+
+  it("does not mistake a document that mentions a time or two", () => {
+    expect(looksLikeConversation("CLINIC\nAppointment 14:30\nArrive early")).toBe(false);
+  });
+
+  it("declines rather than returning the longest line", () => {
+    const chat = "Paul Green\n17:48\nwhat time are you thinking\n07:59\nprobably still get it done\n08:03\nWednesday about 6";
+    expect(extractTask(chat, { now: NOW })).toBeUndefined();
+  });
+});
+
+describe("dropRepeatedPrefix", () => {
+  it("drops a logo the OCR read before the title", () => {
+    expect(dropRepeatedPrefix("THE LEGEND ZELDA The Legend of Zelda 40th Anniversary Edition")).toBe(
+      "The Legend of Zelda 40th Anniversary Edition",
+    );
+  });
+
+  it("leaves a line that merely repeats one word", () => {
+    expect(dropRepeatedPrefix("Pay the gas bill to British Gas")).toBe("Pay the gas bill to British Gas");
+  });
+
+  it("leaves an ordinary title alone", () => {
+    expect(dropRepeatedPrefix("Collect parcel SD9284471GB")).toBe("Collect parcel SD9284471GB");
   });
 });
 
@@ -254,6 +317,40 @@ Open Day 30/09/2026 at 10:00`;
 Your next appointment
 Thursday 10 Sep at 14:30`;
     expect(extractTask(ocr, { now: NOW })!.title).toContain("RIVERSIDE DENTAL");
+  });
+
+  it("takes the timed date for an event, not a deadline mentioned beside it", () => {
+    const ocr = `You're invited to
+THE RIVERSIDE CLUB
+DATE:
+06.09.2026
+TIME:
+13:30-15:30
+PLEASE RSVP BY 14TH AUGUST`;
+    const out = extractTask(ocr, { now: new Date(2026, 8, 1) })!;
+    expect(out.recipe).toBe("event");
+    expect(new Date(out.dueAt!).getDate()).toBe(6);
+    expect(new Date(out.dueAt!).getHours()).toBe(13);
+  });
+
+  it("does not let a bare weekday win just because it carries a time", () => {
+    // Preferring a timed date once forgot specificity, so "WEDNESDAY" beat the
+    // "30TH SEPTEMBER" printed two lines below it.
+    const ocr = `OPEN THE RIVERSIDE ACADEMY DOORS
+WEDNESDAY THE DATE
+30TH
+SEPTEMBER-
+430-730PM`;
+    const out = extractTask(ocr, { now: NOW })!;
+    expect(new Date(out.dueAt!).getDate()).toBe(30);
+    expect(new Date(out.dueAt!).getHours()).toBe(16);
+  });
+
+  it("does not name an invitation after its banner", () => {
+    const ocr = "You're invited to\nTHE RIVERSIDE CLUB\nOpen Day 30/09/2026 at 10:00";
+    const title = extractTask(ocr, { now: NOW })!.title;
+    expect(title).not.toContain("invited");
+    expect(title).toContain("RIVERSIDE CLUB");
   });
 
   it("does not call an undated flyer an event", () => {

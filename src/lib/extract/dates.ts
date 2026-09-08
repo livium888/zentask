@@ -116,8 +116,9 @@ function findTimes(text: string): Array<{ minutes: number; index: number; raw: s
   const patterns: Array<[RegExp, (m: RegExpMatchArray) => [string, string, string | undefined] | undefined]> = [
     // "430-730PM" — a range on a poster. The meridiem governs the start time.
     [/\b(\d{1,2})(\d{2})\s*[-–]\s*\d{1,4}\s*(am|pm)\b/gi, (m) => (m[1] && m[2] ? [m[1], m[2], m[3]] : undefined)],
-    // "14:30", "2.30pm"
-    [/\b(\d{1,2})[:.](\d{2})\s*(am|pm)?\b/gi, (m) => (m[1] && m[2] ? [m[1], m[2], m[3]] : undefined)],
+    // "14:30", "2.30pm". The lookarounds stop a dotted date being read as a
+    // clock: "06.09.2026" is the sixth of September, not nine minutes past six.
+    [/(?<![\d.])(\d{1,2})[:.](\d{2})(?![\d.])\s*(am|pm)?/gi, (m) => (m[1] && m[2] ? [m[1], m[2], m[3]] : undefined)],
     // "730PM" — no colon. A meridiem is required, which keeps years and
     // account numbers out of the results.
     [/\b(\d{1,2})(\d{2})\s*(am|pm)\b/gi, (m) => (m[1] && m[2] ? [m[1], m[2], m[3]] : undefined)],
@@ -156,9 +157,23 @@ function attachTime(
   return best?.minutes;
 }
 
+/**
+ * The year a document says it is about, if it says so once and consistently.
+ *
+ * An invitation reading "06.09.2026 ... RSVP BY 14TH AUGUST" means August of
+ * that same year. Rolling the bare date forward to the next occurrence — right
+ * for a receipt photographed in December — puts it a year out here.
+ */
+function statedYear(text: string): number | undefined {
+  const years = new Set<number>();
+  for (const m of text.matchAll(/\b(19|20)(\d{2})\b/g)) years.add(Number(m[0]));
+  return years.size === 1 ? [...years][0] : undefined;
+}
+
 export function findDates(text: string, options: DateOptions = {}): DateMatch[] {
   const now = options.now ?? new Date();
   const dayFirst = options.dayFirst ?? true;
+  const stated = statedYear(text);
   const times = findTimes(text);
   const out: DateMatch[] = [];
 
@@ -193,7 +208,7 @@ export function findDates(text: string, options: DateOptions = {}): DateMatch[] 
     const dayIsFirst = second > 12 ? false : first > 12 ? true : dayFirst;
     const day = dayIsFirst ? first : second;
     const month = (dayIsFirst ? second : first) - 1;
-    const year = y ? clampYear(Number(y)) : inferYear(month, day, now);
+    const year = y ? clampYear(Number(y)) : stated ?? inferYear(month, day, now);
     push(year, month, day, m.index, m[0]);
   }
 
@@ -208,7 +223,7 @@ export function findDates(text: string, options: DateOptions = {}): DateMatch[] 
     const month = monthIndex(mo);
     if (month === undefined) continue;
     const day = Number(d);
-    push(y ? Number(y) : inferYear(month, day, now), month, day, m.index, m[0]);
+    push(y ? Number(y) : stated ?? inferYear(month, day, now), month, day, m.index, m[0]);
   }
 
   // September 12, 2026 / Sep 12
@@ -223,7 +238,7 @@ export function findDates(text: string, options: DateOptions = {}): DateMatch[] 
     if (month === undefined) continue;
     const day = Number(d);
     if (out.some((hit) => Math.abs(hit.index - m.index) < 4)) continue;
-    push(y ? Number(y) : inferYear(month, day, now), month, day, m.index, m[0]);
+    push(y ? Number(y) : stated ?? inferYear(month, day, now), month, day, m.index, m[0]);
   }
 
   // today / tomorrow / tonight
@@ -265,28 +280,29 @@ export function findDates(text: string, options: DateOptions = {}): DateMatch[] 
 const DEADLINE_CUE = /\b(due|by|before|deadline|expires?|pay by|return by|valid until|no later than)\b/i;
 const CUE_WINDOW = 30;
 
-export function pickDueDate(text: string, options: DateOptions = {}): DateMatch | undefined {
-  const now = options.now ?? new Date();
-  const matches = mergeDates(findDates(text, options), options.extraDates ?? []);
-  if (matches.length === 0) return undefined;
+const SPECIFICITY_RANK: Record<DateSpecificity, number> = {
+  explicit: 2,
+  relative: 1,
+  weekday: 0,
+};
 
-  const future = matches.filter((m) => m.at >= now.getTime() - 86_400_000);
-  const pool = future.length > 0 ? future : matches;
-
+/**
+ * Rank the candidates for the one date a task should carry.
+ *
+ * In order: a date the text calls a deadline, then one the model found, then
+ * the most specific mention, then one carrying a time, and only then the
+ * earliest in the text — position is the weakest signal of the five, because
+ * on a receipt the first date printed is usually the till date.
+ *
+ * Shared, not duplicated. An earlier version sorted timed matches separately
+ * and forgot specificity, which let "WEDNESDAY" outrank the "30TH SEPTEMBER"
+ * printed two lines below it — exactly the bug the ranking exists to prevent.
+ */
+function rank(matches: DateMatch[], text: string): DateMatch[] {
   const cued = (match: DateMatch) =>
     DEADLINE_CUE.test(text.slice(Math.max(0, match.index - CUE_WINDOW), match.index));
 
-  const SPECIFICITY_RANK: Record<DateSpecificity, number> = {
-    explicit: 2,
-    relative: 1,
-    weekday: 0,
-  };
-
-  // In order: a date the text calls a deadline, then the most specific
-  // mention, then one that carries a time, and only then the earliest in the
-  // text — position is the weakest signal of the four, because on a receipt
-  // the first date printed is usually the till date.
-  return [...pool].sort((a, b) => {
+  return [...matches].sort((a, b) => {
     const byCue = Number(cued(b)) - Number(cued(a));
     if (byCue !== 0) return byCue;
     const byModel = Number(b.fromModel ?? false) - Number(a.fromModel ?? false);
@@ -296,7 +312,29 @@ export function pickDueDate(text: string, options: DateOptions = {}): DateMatch 
     const byTime = Number(b.hasTime) - Number(a.hasTime);
     if (byTime !== 0) return byTime;
     return a.index - b.index;
-  })[0];
+  });
+}
+
+/** Everything found, best first. Dates already past are kept only if nothing is ahead. */
+function candidates(text: string, options: DateOptions): DateMatch[] {
+  const now = options.now ?? new Date();
+  const all = mergeDates(findDates(text, options), options.extraDates ?? []);
+  const future = all.filter((m) => m.at >= now.getTime() - 86_400_000);
+  return rank(future.length > 0 ? future : all, text);
+}
+
+export function pickDueDate(text: string, options: DateOptions = {}): DateMatch | undefined {
+  return candidates(text, options)[0];
+}
+
+/**
+ * The best date that carries a time of day.
+ *
+ * An event happens at a time; a deadline beside it — "RSVP by the 14th" —
+ * often does not. Ranked identically to everything else, then filtered.
+ */
+export function pickTimedDate(text: string, options: DateOptions = {}): DateMatch | undefined {
+  return candidates(text, options).find((m) => m.hasTime);
 }
 
 /** How far apart two readings of the same date can sit and still be the same one. */

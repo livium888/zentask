@@ -11,7 +11,7 @@
  *     # name: british gas bill
  *     # now: 2026-09-08T10:00
  *     # status: enforced
- *     # expect-recipe: bill
+ *     # expect-recipe: bill        (or "none" to assert nothing is extracted)
  *     # expect-title-contains: Pay £84.60
  *     # expect-due: 2026-09-30
  *     ---
@@ -110,6 +110,14 @@ export function checkFixture(fixture: Fixture): FixtureResult {
     confidence: extraction?.confidence,
   };
 
+  const { recipe, titleContains, due, confidence } = fixture.expect;
+
+  // Some captures have no task in them, and saying so is the right answer.
+  if (recipe === "none") {
+    if (extraction) failures.push(`wanted nothing, got ${extraction.recipe}: "${extraction.title}"`);
+    return { fixture, ok: failures.length === 0, failures, observed };
+  }
+
   if (!extraction) {
     // A case with no expectations at all is a raw dump waiting to be labelled.
     const wanted = Object.values(fixture.expect).some((value) => value !== undefined);
@@ -117,7 +125,6 @@ export function checkFixture(fixture: Fixture): FixtureResult {
     return { fixture, ok: failures.length === 0, failures, observed };
   }
 
-  const { recipe, titleContains, due, confidence } = fixture.expect;
 
   if (recipe && extraction.recipe !== recipe) {
     failures.push(`recipe: wanted ${recipe}, got ${extraction.recipe}`);

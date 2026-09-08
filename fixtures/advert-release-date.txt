@@ -1,0 +1,22 @@
+# name: shop advert with a release date
+# now: 2026-09-08T20:37
+# status: enforced
+# expect-recipe: fallback
+# expect-title-contains: Legend of Zelda
+# expect-due: 2026-10-29
+#
+# OCR read the logo and then the title beneath it, so the product arrived named
+# twice: "THE LEGEND ZELDA The Legend of Zelda 40th Anniversary Edition".
+# There is no recipe for "a thing comes out on a date" yet, so this stays a
+# fallback — but with the right date and a title that reads once.
+---
+TH
+46 Nintendo Switch 2
+THE LEGEND ZELDA The Legend of Zelda 40th Anniversary Edition
+A
+O92
+NINTE NDO
+SWITCH
+AVAILABLE OCTOBER 29TH, 2026
+"Gome software not included,
+SONY

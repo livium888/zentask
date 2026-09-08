@@ -10,10 +10,10 @@
  */
 
 import type { Confidence } from "@/types";
-import { pickDueDate, type DateOptions } from "./dates";
+import { pickDueDate, pickTimedDate, type DateOptions } from "./dates";
 import { pickAmount, type MoneyMatch } from "./money";
 import { RECIPES } from "./recipes";
-import { toLines } from "./text";
+import { looksLikeConversation, toLines } from "./text";
 
 export type Extraction = {
   title: string;
@@ -30,6 +30,10 @@ export type ExtractOptions = DateOptions & {
 };
 
 export function extractTask(raw: string, options: ExtractOptions = {}): Extraction | undefined {
+  // A conversation has no task in it that any rule can find; saying so is
+  // better than handing back whichever line happened to be longest.
+  if (looksLikeConversation(raw)) return undefined;
+
   const lines = toLines(raw);
   if (lines.length === 0) return undefined;
 
@@ -39,6 +43,7 @@ export function extractTask(raw: string, options: ExtractOptions = {}): Extracti
     lines,
     text,
     due: pickDueDate(text, { ...options, now }),
+    timedDue: pickTimedDate(text, { ...options, now }),
     amount: pickAmount(text, options.extraMoney),
     references: options.extraReferences,
     now,
@@ -54,4 +59,4 @@ export function extractTask(raw: string, options: ExtractOptions = {}): Extracti
 export { findDates, pickDueDate } from "./dates";
 export { findMoney, pickAmount, formatAmount, type MoneyMatch } from "./money";
 export { mergeDates, type DateMatch } from "./dates";
-export { toLines, tidyTitle } from "./text";
+export { toLines, tidyTitle, dropRepeatedPrefix, looksLikeConversation } from "./text";

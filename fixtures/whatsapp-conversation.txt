@@ -1,0 +1,40 @@
+# name: whatsapp conversation
+# now: 2026-09-08T20:37
+# status: enforced
+# expect-recipe: none
+#
+# There is a real arrangement in here — Paul coming round Wednesday about six —
+# and no rule can find it: it is spread across who said what to whom. The app
+# used to hand back the longest line ("Tbh il probably still get it done if
+# it's") with a date taken from the word "Wednesday". Recognising a message
+# thread by its run of bare timestamps, and declining, is the honest answer.
+# This is the case that would need a comprehension model, not a better regex.
+---
+17:57 l 89)
+Paul Green
+17:48
+Hey bud, yep, what time are you
+thinking of? and I assume if it's not
+a raining like today
+07:59
+Tbh il probably still get it done if it's
+raining
+08:03
+I will be in the Whiteley office
+Wednesday and will probably leave
+around 5ish, will come home and
+get changed and then crack on, so
+about 5:30/6ish
+08:04
+Should be done in an hour I reckon
+08:04
+3
+Paul Green
+I will be in the Whiteley office
+Wednesday and will probably leave
+around 5ish, will come home and get ..
+yeah 6ish should work for me
+08:05 V!
+oo)
+Legend thank you. 08:11 AA
+Message

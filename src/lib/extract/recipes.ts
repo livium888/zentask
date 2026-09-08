@@ -20,6 +20,8 @@ export type RecipeInput = {
   lines: string[];
   text: string;
   due?: DateMatch;
+  /** The best date carrying a time of day. An event has one; a deadline often does not. */
+  timedDue?: DateMatch;
   amount?: MoneyMatch;
   /** Tracking and reference numbers the entity extractor recognised. */
   references?: string[];
@@ -50,7 +52,7 @@ const EXPIRY = /\b(expires?|expiry|valid until|renew|renewal|mot|insurance|licen
 const EVENT_TRIGGER = /\b(open (event|evening|day|morning|house)|save the date|come and explore|you'?re invited|invitation|webinar|workshop|seminar|screening|performance|concert|festival|fair|kick-?off|deadline for entries)\b/i;
 // "Save the date" and "you're invited" are banners: they say an event exists
 // without naming it, so they trigger the recipe but never supply the title.
-const EVENT_NAME = /\b(open (?:event|evening|day|morning|house)|webinar|workshop|seminar|screening|performance|concert|festival|fair)\b/i;
+const EVENT_NAME = /\b(open (?:event|evening|day|morning|house)|party|webinar|workshop|seminar|screening|performance|concert|festival|fair)\b/i;
 
 const IMPERATIVE = /^(call|email|book|pay|send|bring|return|collect|renew|confirm|reply|submit|order|buy|cancel|register|sign|upload|print|post|fill|complete|schedule|remind)\b/i;
 
@@ -78,7 +80,24 @@ const INSTITUTION_WORD = new RegExp(`\\b(?:${INSTITUTION})\\b`, "i");
 const NAME_UP_TO_INSTITUTION = new RegExp(`^(.*?\\b(?:${INSTITUTION}))\\b`, "i");
 
 /** Words that announce something rather than name anyone. */
-const NOT_A_NAME = /^(open|save|the|a|welcome|new|our|your|next|come|join|free|book|now|today|hello|hi|from)$/i;
+const NOT_A_NAME = /^(open|save|the|a|welcome|new|our|your|next|come|join|free|book|now|today|hello|hi|from|to|invited)$/i;
+
+/**
+ * Lines that are pure announcement, and name nobody.
+ *
+ * An invitation opens "You're invited to" — three words, near the top, in the
+ * shape a name usually takes, and it identifies nothing. Without this the
+ * banner outscores the actual name printed underneath it.
+ */
+const BANNER = /^(you'?re invited( to)?|save the date|invitation|rsvp|please rsvp|date|time|location|venue|where|when|address)[:!.]?$/i;
+
+/**
+ * A line that is really a date, not a name.
+ *
+ * "BY 14TH AUGUST" has the shape the scorer likes — a few words, printed in
+ * capitals — and identifies nobody. So does "06.09.2026".
+ */
+const DATE_LINE = /^(by|due|before|on|from|until)\b|\b(january|february|march|april|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b|\d{1,2}[./-]\d{1,2}/i;
 
 const PRINTED_IN_CAPS = /^[A-Z0-9 &'’.\-]+$/;
 
@@ -127,6 +146,8 @@ function subject(lines: string[]): string | undefined {
   let best: { name: string; score: number } | undefined;
 
   lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    if (BANNER.test(trimmed) || DATE_LINE.test(trimmed)) return;
     const letters = line.replace(/[^a-z]/gi, "").length;
     if (letters < 4 || letters / line.length <= 0.5) return;
     const name = cleanName(line);
@@ -185,18 +206,23 @@ function titleCase(phrase: string): string {
     .join(" ");
 }
 
-const event: Recipe = ({ lines, text, due }) => {
-  if (!EVENT_TRIGGER.test(text) || !due) return undefined;
+const event: Recipe = ({ lines, text, due, timedDue }) => {
+  if (!EVENT_TRIGGER.test(text)) return undefined;
+  // An event happens at a time. A deadline mentioned alongside it — "RSVP by
+  // the 14th" — reads as the stronger signal to the general ranking, but the
+  // thing being invited to is the one with a clock on it.
+  const when = timedDue ?? due;
+  if (!when) return undefined;
   const named = text.match(EVENT_NAME)?.[0];
   const what = named ? titleCase(named) : "Event";
   // "Open Event" on its own says nothing: whose open event, and where? The
   // sender is the detail that makes the task answerable.
   const who = subject(lines);
   return {
-    title: tidyTitle(who ? `${what} — ${who}, ${describeDate(due)}` : `${what} — ${describeDate(due)}`),
-    dueAt: due.at,
+    title: tidyTitle(who ? `${what} — ${who}, ${describeDate(when)}` : `${what} — ${describeDate(when)}`),
+    dueAt: when.at,
     // Without a time this is a date someone printed, not a plan.
-    confidence: due.hasTime ? "high" : "low",
+    confidence: when.hasTime ? "high" : "low",
     recipe: "event",
   };
 };
