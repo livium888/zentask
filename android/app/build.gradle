@@ -1,5 +1,39 @@
 apply plugin: 'com.android.application'
 
+// Release signing.
+//
+// The keystore never lives in this repository. Locally it comes from
+// android/keystore.properties (gitignored); in CI it comes from environment
+// variables decoded from repository secrets. If neither is present the release
+// build is simply left unsigned rather than falling back to the debug key —
+// an unsigned artifact fails loudly at install time, whereas a debug-signed
+// one looks shippable and is not.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
+def signingValue = { String fileKey, String envKey ->
+    def fromFile = keystoreProperties.getProperty(fileKey)
+    return (fromFile?.trim()) ?: System.getenv(envKey)
+}
+
+def storeFilePath = signingValue('storeFile', 'ANDROID_KEYSTORE_PATH')
+def storePasswordValue = signingValue('storePassword', 'ANDROID_KEYSTORE_PASSWORD')
+def keyAliasValue = signingValue('keyAlias', 'ANDROID_KEY_ALIAS')
+def keyPasswordValue = signingValue('keyPassword', 'ANDROID_KEY_PASSWORD')
+def hasReleaseSigning = storeFilePath && storePasswordValue && keyAliasValue && keyPasswordValue
+
+if (!hasReleaseSigning) {
+    logger.lifecycle("No release signing configured; assembleRelease will produce an unsigned artifact.")
+}
+
+// Play refuses an upload whose versionCode it has already seen, so CI supplies
+// a monotonic one. Local builds stay at 1, which is fine for sideloading.
+def resolvedVersionCode = (System.getenv('ANDROID_VERSION_CODE') ?: '1') as Integer
+def resolvedVersionName = System.getenv('ANDROID_VERSION_NAME') ?: '1.0'
+
 android {
     namespace = "app.zentask.capture"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +41,8 @@ android {
         applicationId "app.zentask.capture"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode resolvedVersionCode
+        versionName resolvedVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +50,27 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(storeFilePath)
+                storePassword storePasswordValue
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // Left off deliberately. Capacitor resolves plugins by reflection
+            // and ML Kit ships its own consumer rules; turning shrinking on is
+            // a change that has to be verified on a device, not guessed at.
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
