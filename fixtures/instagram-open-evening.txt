@@ -1,0 +1,34 @@
+# name: instagram screenshot of a school open evening
+# now: 2026-09-08T18:45
+# status: enforced
+# expect-recipe: event
+# expect-title-contains: Open Event
+# expect-due: 2026-09-30
+#
+# A real capture. Three separate things go wrong on it:
+#   - the phone's status bar ("18:45 18°") and Instagram's chrome ("Posts",
+#     "SAVE", "2 days ago") are read as content
+#   - the bare weekday "WEDNESDAY" wins over the explicit "30TH SEPTEMBER",
+#     which sits two lines below it, so the date lands three weeks early
+#   - "430-730PM" carries no colon, so no time is found at all
+---
+18:45 18° ring l 82)
+Posts
+thekingsschooluk
+OPEN THEKING'S SCHOOL WISDOM STATURE FAVOUR
+EVENING
+SAVE
+WEDNESDAY THE DATE
+30TH
+SEPTEMBER-
+430-730PM
+Come and explore The King's Schooland
+discover achoice for smallclass sizes and quality
+education rooted in Christian values
+ADMISSIONS OPEN FOR PUPILS 4-16YEARS
+Growing together in wisdom, stature and favour
+13
+thekingsschooluk Our next Open Event is coming
+sOon, on Wednesday 30th September. Th... more
+2 days ago
+L

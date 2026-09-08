@@ -85,11 +85,59 @@ describe("findDates", () => {
   });
 });
 
+describe("times written without a colon", () => {
+  it("reads a poster's time range as its start", () => {
+    const [hit] = findDates("10 Sep 430-730PM", { now: NOW });
+    expect(new Date(hit!.at).getHours()).toBe(16);
+    expect(new Date(hit!.at).getMinutes()).toBe(30);
+  });
+
+  it("reads a bare compact time", () => {
+    const [hit] = findDates("10 Sep at 730PM", { now: NOW });
+    expect(new Date(hit!.at).getHours()).toBe(19);
+  });
+
+  it("does not read a year or an account number as a time", () => {
+    expect(findDates("Account 2026 1830", { now: NOW })).toHaveLength(0);
+  });
+});
+
 describe("pickDueDate", () => {
+  it("prefers an explicit date over a bare weekday printed above it", () => {
+    // A poster reading "WEDNESDAY THE DATE / 30TH SEPTEMBER" names one day
+    // twice; the weekday is corroboration, not a second event.
+    const due = pickDueDate("WEDNESDAY THE DATE\n30TH\nSEPTEMBER", { now: NOW });
+    expect(new Date(due!.at).getDate()).toBe(30);
+    expect(due!.specificity).toBe("explicit");
+  });
+
+  it("still uses a weekday when it is the only date given", () => {
+    const due = pickDueDate("see you Wednesday", { now: NOW });
+    expect(new Date(due!.at).getDate()).toBe(9);
+  });
+
   it("prefers a date introduced by a deadline cue over the print date", () => {
     const text = "Printed 01/09/2026\nAmount due\nPay by 30/09/2026";
     const due = pickDueDate(text, { now: NOW });
     expect(new Date(due!.at).getDate()).toBe(30);
+  });
+});
+
+describe("screenshot furniture", () => {
+  it("drops the phone's own status bar", () => {
+    // Its clock would otherwise be read as the event's time.
+    expect(toLines("18:45 18° ring l 82)\nOPEN EVENING")).toEqual(["OPEN EVENING"]);
+  });
+
+  it("keeps a first line that merely starts with a time", () => {
+    expect(toLines("14:30 kick off at the ground\nsomething")).toContain(
+      "14:30 kick off at the ground",
+    );
+  });
+
+  it("drops app buttons and timestamps", () => {
+    const lines = toLines("Posts\nSAVE\nOur next Open Event\n2 days ago\n13");
+    expect(lines).toEqual(["Our next Open Event"]);
   });
 });
 
@@ -172,6 +220,23 @@ Renew online to keep cover`;
     expect(out.recipe).toBe("action-line");
     expect(out.title).toMatch(/^Call the plumber/);
     expect(new Date(out.dueAt!).getDate()).toBe(9);
+  });
+
+  it("turns a dated invitation into an event", () => {
+    const ocr = `SAVE THE DATE
+Our next Open Event is on Wednesday 30th September
+430-730PM`;
+    const out = extractTask(ocr, { now: NOW })!;
+    expect(out.recipe).toBe("event");
+    expect(out.title).toContain("Open Event");
+    expect(new Date(out.dueAt!).getDate()).toBe(30);
+    expect(new Date(out.dueAt!).getHours()).toBe(16);
+  });
+
+  it("does not call an undated flyer an event", () => {
+    expect(extractTask("SAVE THE DATE\nOpen Evening coming soon", { now: NOW })!.recipe).not.toBe(
+      "event",
+    );
   });
 
   it("admits low confidence instead of inventing a task", () => {

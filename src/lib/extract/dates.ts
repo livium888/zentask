@@ -11,12 +11,24 @@
  *    "due 5 Jan" means next year, and the opposite reading is always wrong.
  */
 
+/**
+ * How strong a claim a match has on being *the* date.
+ *
+ * A poster that says "WEDNESDAY THE DATE / 30TH SEPTEMBER" contains both a
+ * bare weekday and an explicit date, and the weekday is usually there to
+ * corroborate the date rather than to name a different one. Ranking by
+ * specificity stops the weaker mention winning just because it was printed
+ * first.
+ */
+export type DateSpecificity = "explicit" | "relative" | "weekday";
+
 export type DateMatch = {
   /** Epoch ms. Midnight local time unless a time was found alongside. */
   at: number;
   hasTime: boolean;
   raw: string;
   index: number;
+  specificity: DateSpecificity;
 };
 
 export type DateOptions = {
@@ -75,32 +87,40 @@ function isRealDate(year: number, month: number, day: number): boolean {
 /** All times in the text, as minutes past midnight, with their positions. */
 function findTimes(text: string): Array<{ minutes: number; index: number; raw: string }> {
   const found: Array<{ minutes: number; index: number; raw: string }> = [];
-  const withMinutes = /\b(\d{1,2})[:.](\d{2})\s*(am|pm)?\b/gi;
-  const hourOnly = /\b(\d{1,2})\s*(am|pm)\b/gi;
 
-  for (const m of text.matchAll(withMinutes)) {
-    const rawHour = m[1];
-    const rawMinute = m[2];
-    if (rawHour === undefined || rawMinute === undefined) continue;
-    let hour = Number(rawHour);
-    const minute = Number(rawMinute);
-    const meridiem = m[3]?.toLowerCase();
-    if (hour > 23 || minute > 59) continue;
-    if (meridiem === "pm" && hour < 12) hour += 12;
-    if (meridiem === "am" && hour === 12) hour = 0;
-    found.push({ minutes: hour * 60 + minute, index: m.index, raw: m[0] });
-  }
+  const add = (hour: number, minute: number, meridiem: string | undefined, index: number, raw: string) => {
+    if (minute > 59) return;
+    if (meridiem && hour > 12) return;
+    if (!meridiem && hour > 23) return;
+    let resolved = hour;
+    const suffix = meridiem?.toLowerCase();
+    if (suffix === "pm" && resolved < 12) resolved += 12;
+    if (suffix === "am" && resolved === 12) resolved = 0;
+    // Overlapping patterns find the same clock twice; keep the first reading.
+    const end = index + raw.length;
+    if (found.some((t) => index < t.index + t.raw.length && t.index < end)) return;
+    found.push({ minutes: resolved * 60 + minute, index, raw });
+  };
 
-  for (const m of text.matchAll(hourOnly)) {
-    const rawHour = m[1];
-    const meridiem = m[2];
-    if (rawHour === undefined || meridiem === undefined) continue;
-    let hour = Number(rawHour);
-    if (hour > 12) continue;
-    if (meridiem.toLowerCase() === "pm" && hour < 12) hour += 12;
-    if (meridiem.toLowerCase() === "am" && hour === 12) hour = 0;
-    if (found.some((t) => Math.abs(t.index - m.index) < 3)) continue;
-    found.push({ minutes: hour * 60, index: m.index, raw: m[0] });
+  // Most specific first, so a range is read before its halves.
+  const patterns: Array<[RegExp, (m: RegExpMatchArray) => [string, string, string | undefined] | undefined]> = [
+    // "430-730PM" — a range on a poster. The meridiem governs the start time.
+    [/\b(\d{1,2})(\d{2})\s*[-–]\s*\d{1,4}\s*(am|pm)\b/gi, (m) => (m[1] && m[2] ? [m[1], m[2], m[3]] : undefined)],
+    // "14:30", "2.30pm"
+    [/\b(\d{1,2})[:.](\d{2})\s*(am|pm)?\b/gi, (m) => (m[1] && m[2] ? [m[1], m[2], m[3]] : undefined)],
+    // "730PM" — no colon. A meridiem is required, which keeps years and
+    // account numbers out of the results.
+    [/\b(\d{1,2})(\d{2})\s*(am|pm)\b/gi, (m) => (m[1] && m[2] ? [m[1], m[2], m[3]] : undefined)],
+    // "3pm"
+    [/\b(\d{1,2})\s*(am|pm)\b/gi, (m) => (m[1] ? [m[1], "0", m[2]] : undefined)],
+  ];
+
+  for (const [pattern, read] of patterns) {
+    for (const m of text.matchAll(pattern)) {
+      const parts = read(m);
+      if (!parts) continue;
+      add(Number(parts[0]), Number(parts[1]), parts[2], m.index, m[0]);
+    }
   }
 
   return found.sort((a, b) => a.index - b.index);
@@ -132,11 +152,18 @@ export function findDates(text: string, options: DateOptions = {}): DateMatch[] 
   const times = findTimes(text);
   const out: DateMatch[] = [];
 
-  const push = (year: number, month: number, day: number, index: number, raw: string) => {
+  const push = (
+    year: number,
+    month: number,
+    day: number,
+    index: number,
+    raw: string,
+    specificity: DateSpecificity = "explicit",
+  ) => {
     if (!isRealDate(year, month, day)) return;
     const minutes = attachTime(times, index, raw.length);
     const at = new Date(year, month, day, 0, minutes ?? 0).getTime();
-    out.push({ at, hasTime: minutes !== undefined, raw, index });
+    out.push({ at, hasTime: minutes !== undefined, raw, index, specificity });
   };
 
   // 2026-09-12
@@ -195,7 +222,7 @@ export function findDates(text: string, options: DateOptions = {}): DateMatch[] 
     if (!word) continue;
     const target = new Date(now);
     if (word === "tomorrow") target.setDate(target.getDate() + 1);
-    push(target.getFullYear(), target.getMonth(), target.getDate(), m.index, m[0]);
+    push(target.getFullYear(), target.getMonth(), target.getDate(), m.index, m[0], "relative");
   }
 
   // Monday / next Tuesday
@@ -212,7 +239,7 @@ export function findDates(text: string, options: DateOptions = {}): DateMatch[] 
     // disagree about whether it means this week's or the following week's, so
     // the nearer reading is the one that cannot strand a task in the past.
     base.setDate(base.getDate() + delta);
-    push(base.getFullYear(), base.getMonth(), base.getDate(), m.index, m[0]);
+    push(base.getFullYear(), base.getMonth(), base.getDate(), m.index, m[0], "weekday");
   }
 
   return out.sort((a, b) => a.index - b.index);
@@ -236,12 +263,26 @@ export function pickDueDate(text: string, options: DateOptions = {}): DateMatch 
   const future = matches.filter((m) => m.at >= now.getTime() - 86_400_000);
   const pool = future.length > 0 ? future : matches;
 
-  const cued = pool.filter((m) => {
-    const before = text.slice(Math.max(0, m.index - CUE_WINDOW), m.index);
-    return DEADLINE_CUE.test(before);
-  });
-  if (cued.length > 0) return cued[0];
+  const cued = (match: DateMatch) =>
+    DEADLINE_CUE.test(text.slice(Math.max(0, match.index - CUE_WINDOW), match.index));
 
-  const timed = pool.filter((m) => m.hasTime);
-  return timed[0] ?? pool[0];
+  const SPECIFICITY_RANK: Record<DateSpecificity, number> = {
+    explicit: 2,
+    relative: 1,
+    weekday: 0,
+  };
+
+  // In order: a date the text calls a deadline, then the most specific
+  // mention, then one that carries a time, and only then the earliest in the
+  // text — position is the weakest signal of the four, because on a receipt
+  // the first date printed is usually the till date.
+  return [...pool].sort((a, b) => {
+    const byCue = Number(cued(b)) - Number(cued(a));
+    if (byCue !== 0) return byCue;
+    const bySpecificity = SPECIFICITY_RANK[b.specificity] - SPECIFICITY_RANK[a.specificity];
+    if (bySpecificity !== 0) return bySpecificity;
+    const byTime = Number(b.hasTime) - Number(a.hasTime);
+    if (byTime !== 0) return byTime;
+    return a.index - b.index;
+  })[0];
 }

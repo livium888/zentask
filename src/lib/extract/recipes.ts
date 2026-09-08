@@ -38,6 +38,18 @@ const APPOINTMENT = /\b(appointment|appt|booking|reservation|consultation|check-
 const BILL = /\b(invoice|bill|amount due|balance due|total due|payment due|outstanding|statement|subscription renews)\b/i;
 const PARCEL = /\b(parcel|package|delivery|collect|collection|tracking|awaiting collection|ready for pickup|locker)\b/i;
 const EXPIRY = /\b(expires?|expiry|valid until|renew|renewal|mot|insurance|licence|license|passport|warranty)\b/i;
+/**
+ * Something happening on a date you might want to be at.
+ *
+ * Split in two on purpose. The trigger is broad enough to recognise a flyer or
+ * an invitation; the name is narrow, and supplies the words for the task, so a
+ * poster does not end up titled with whatever marketing line came first.
+ */
+const EVENT_TRIGGER = /\b(open (event|evening|day|morning|house)|save the date|come and explore|you'?re invited|invitation|webinar|workshop|seminar|screening|performance|concert|festival|fair|kick-?off|deadline for entries)\b/i;
+// "Save the date" and "you're invited" are banners: they say an event exists
+// without naming it, so they trigger the recipe but never supply the title.
+const EVENT_NAME = /\b(open (?:event|evening|day|morning|house)|webinar|workshop|seminar|screening|performance|concert|festival|fair)\b/i;
+
 const IMPERATIVE = /^(call|email|book|pay|send|bring|return|collect|renew|confirm|reply|submit|order|buy|cancel|register|sign|upload|print|post|fill|complete|schedule|remind)\b/i;
 
 /** A short reference a human would actually quote: order or tracking numbers. */
@@ -107,6 +119,27 @@ const expiry: Recipe = ({ lines, text, due }) => {
   return { title: tidyTitle(title), dueAt: due.at, confidence: "high", recipe: "expiry" };
 };
 
+function titleCase(phrase: string): string {
+  return phrase
+    .toLowerCase()
+    .split(" ")
+    .map((word) => (word ? word[0]!.toUpperCase() + word.slice(1) : word))
+    .join(" ");
+}
+
+const event: Recipe = ({ text, due }) => {
+  if (!EVENT_TRIGGER.test(text) || !due) return undefined;
+  const named = text.match(EVENT_NAME)?.[0];
+  const what = named ? titleCase(named) : "Event";
+  return {
+    title: tidyTitle(`${what} — ${describeDate(due)}`),
+    dueAt: due.at,
+    // Without a time this is a date someone printed, not a plan.
+    confidence: due.hasTime ? "high" : "low",
+    recipe: "event",
+  };
+};
+
 /** Someone has already written the task down; we just have to notice. */
 const actionLine: Recipe = ({ lines, due }) => {
   const line = lines.find((candidate) => IMPERATIVE.test(candidate));
@@ -121,4 +154,4 @@ const fallback: Recipe = ({ lines, due }) => {
   return { title: tidyTitle(best), dueAt: due?.at, confidence: "low", recipe: "fallback" };
 };
 
-export const RECIPES: Recipe[] = [appointment, bill, expiry, parcel, actionLine, fallback];
+export const RECIPES: Recipe[] = [appointment, bill, expiry, event, parcel, actionLine, fallback];
