@@ -37,6 +37,13 @@ field here has to earn its place against that.
    it slots in underneath them. The model is a few megabytes, downloaded once
    in the background, and nothing waits on it — until it arrives the rules do
    all the work, exactly as before.
+
+   It costs something: the library declares `minSdk 26`, so the app requires
+   Android 8.0 rather than 7.0. Forcing the build past that with
+   `tools:overrideLibrary` would ship an app that installs on Android 7 and
+   then crashes there, which is worse than not supporting it. Dropping the
+   dependency and putting `minSdkVersion` back to 24 is a two-line reversal if
+   that trade ever stops being worth it.
 3. **Ask.** The proposal lands in a review queue with the text it came from one
    tap away. Nothing files itself.
 

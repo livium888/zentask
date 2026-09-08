@@ -1,5 +1,12 @@
 ext {
-    minSdkVersion = 24
+    // 26 (Android 8.0, 2017) because ML Kit's entity extractor declares that
+    // floor and the manifest merger will not go below it. The alternative —
+    // tools:overrideLibrary — forces the build through and then crashes on the
+    // devices it excluded, which is worse than not supporting them honestly.
+    // Android 7 is nine years old and no longer receives Play Services
+    // updates; if that trade ever stops being worth it, drop the
+    // entity-extraction dependency and put this back to 24.
+    minSdkVersion = 26
     compileSdkVersion = 36
     targetSdkVersion = 36
     androidxActivityVersion = '1.11.0'
