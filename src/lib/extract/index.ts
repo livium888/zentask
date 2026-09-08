@@ -29,6 +29,17 @@ export type ExtractOptions = DateOptions & {
   extraReferences?: string[];
 };
 
+/**
+ * The text the rules actually read, after chrome and debris are removed.
+ *
+ * Anything computing hints for `extractTask` has to work from this, not from
+ * the raw OCR: otherwise a model reads the phone's own status bar as content,
+ * and its match positions refer to a different string than the rules' do.
+ */
+export function cleanedText(raw: string): string {
+  return toLines(raw).join("\n");
+}
+
 export function extractTask(raw: string, options: ExtractOptions = {}): Extraction | undefined {
   // A conversation has no task in it that any rule can find; saying so is
   // better than handing back whichever line happened to be longest.

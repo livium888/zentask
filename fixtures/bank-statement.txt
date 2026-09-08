@@ -1,0 +1,20 @@
+# name: bank statement with nothing to do
+# now: 2026-09-08T20:50
+# status: enforced
+# expect-recipe: none
+#
+# A page of prose, a five-year-old date and nothing owed. The app offered
+# "To get your most up to date balances or find out about…" as a task, dated
+# 2021. There is nothing in here to do, and the honest answer is to say so.
+---
+BARCLAYS
+MG 002579 F1VI1375A 709F304ZC00143 30500 9410253639 B
+MRL MOSOIU
+13 GLENSHANE DRIVE
+LURGAN
+CRAIGAVON
+BT66 7HF
+Your accounts at a glance
+► Your balances on 25 Mar 2021 Everyday banking
+To get your most up to date balances or find out about & Barclays Bank
+other accounts you have that aren't listed here, log on to

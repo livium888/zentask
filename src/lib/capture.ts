@@ -1,6 +1,6 @@
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 import type { PendingReview, TaskSource } from "@/types";
-import { extractTask } from "./extract";
+import { cleanedText, extractTask, looksLikeConversation } from "./extract";
 import { newId } from "./db/types";
 import { readImageText } from "./ocr";
 import type { SharePayload } from "./share-target";
@@ -36,6 +36,17 @@ async function pickImage(source: TaskSource): Promise<string> {
   return path;
 }
 
+/**
+ * Ask the on-device extractor about a capture.
+ *
+ * Given the cleaned text, never the raw OCR — a phone's status bar clock is
+ * not part of the poster, and hint positions have to line up with the rules'.
+ */
+async function hintsFor(rawText: string): Promise<EntityHints> {
+  if (looksLikeConversation(rawText)) return NO_HINTS;
+  return findEntities(cleanedText(rawText));
+}
+
 /** Build a review from text we already have — shared text, or a re-read image. */
 export function reviewFromText(
   rawText: string,
@@ -66,7 +77,7 @@ export function reviewFromText(
 export async function captureFromImage(source: "camera" | "gallery"): Promise<PendingReview> {
   const path = await pickImage(source);
   const rawText = await readImageText(path);
-  return reviewFromText(rawText, source, { imagePath: path, hints: await findEntities(rawText) });
+  return reviewFromText(rawText, source, { imagePath: path, hints: await hintsFor(rawText) });
 }
 
 /**
@@ -80,11 +91,11 @@ export async function captureFromShare(payload: SharePayload): Promise<PendingRe
     const rawText = await readImageText(payload.imagePath);
     return reviewFromText(rawText, "share", {
       imagePath: payload.imagePath,
-      hints: await findEntities(rawText),
+      hints: await hintsFor(rawText),
     });
   }
   if (payload.text) {
-    return reviewFromText(payload.text, "share", { hints: await findEntities(payload.text) });
+    return reviewFromText(payload.text, "share", { hints: await hintsFor(payload.text) });
   }
   throw new NothingToRead();
 }

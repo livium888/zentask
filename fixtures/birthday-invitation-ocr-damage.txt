@@ -1,0 +1,17 @@
+# name: birthday invitation the OCR mangled
+# now: 2026-09-08T20:49
+# status: enforced
+# expect-recipe: event
+# expect-due: 2026-09-02
+#
+# Almost every word here is damaged: "90U'RE" for "YOU'RE", "Sepkemer" for
+# "September", "3d" for "3rd". The month was unreadable, so no date was found
+# at all, and the title came from the venue field.
+---
+90U'RE INVITED TO
+Aca's 3d
+BIRTHDAY PARTY
+DATE: 2 Sepkemer 2026
+TiME:1100
+PLACE: fla Shac.. Hedge end So3C.A...
+RSVPi.AAAO1514211544O

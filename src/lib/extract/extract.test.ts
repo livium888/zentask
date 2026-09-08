@@ -46,6 +46,56 @@ describe("a year the document states", () => {
   });
 });
 
+describe("dates too old to act on", () => {
+  it("ignores a date from years ago", () => {
+    // A statement printed in 2021 does not give a task a due date.
+    const out = extractTask("BARCLAYS\nYour balances on 25 Mar 2021\nTotal due £40.00", { now: NOW })!;
+    expect(out.dueAt).toBeUndefined();
+  });
+
+  it("keeps a date that has only just passed", () => {
+    const out = extractTask("Party invitation\nDATE: 06.09.2026\nTIME: 13:30", { now: NOW })!;
+    expect(new Date(out.dueAt!).getDate()).toBe(6);
+  });
+});
+
+describe("OCR damage", () => {
+  it("reads a mangled month when the day and year leave no doubt", () => {
+    const [hit] = findDates("DATE: 2 Sepkemer 2026", { now: NOW });
+    expect(new Date(hit!.at).getMonth()).toBe(8);
+    expect(new Date(hit!.at).getDate()).toBe(2);
+  });
+
+  it("does not loosen the month rule anywhere else", () => {
+    expect(findDates("Decision 12 pending", { now: NOW })).toHaveLength(0);
+    expect(findDates("Mayfair 12 branch", { now: NOW })).toHaveLength(0);
+  });
+
+  it("reads a labelled time written without a separator", () => {
+    const [hit] = findDates("DATE: 2 September 2026\nTiME:1100", { now: NOW });
+    expect(new Date(hit!.at).getHours()).toBe(11);
+  });
+});
+
+describe("captures with nothing to do in them", () => {
+  it("declines a page of prose with no date, amount or instruction", () => {
+    const statement = `BARCLAYS
+MRL MOSOIU
+13 GLENSHANE DRIVE
+LURGAN
+Your accounts at a glance
+To get your most up to date balances or find out about
+other accounts you have that aren't listed here, log on to`;
+    expect(extractTask(statement, { now: NOW })).toBeUndefined();
+  });
+
+  it("still offers a short note back", () => {
+    // A photographed note is a couple of lines with none of those signals.
+    const out = extractTask("milk\nbread\neggs", { now: NOW })!;
+    expect(out.recipe).toBe("fallback");
+  });
+});
+
 describe("conversations", () => {
   it("recognises a message thread by its run of timestamps", () => {
     expect(looksLikeConversation("Paul\n17:48\nhi\n07:59\nyep\n08:03\nsee you")).toBe(true);
@@ -344,6 +394,22 @@ SEPTEMBER-
     const out = extractTask(ocr, { now: NOW })!;
     expect(new Date(out.dueAt!).getDate()).toBe(30);
     expect(new Date(out.dueAt!).getHours()).toBe(16);
+  });
+
+  it("does not name a capture after a form field", () => {
+    const ocr = `YOU'RE INVITED TO
+BIRTHDAY PARTY
+DATE: 2 September 2026
+TIME: 1100
+PLACE: The Shack, Hedge End`;
+    const title = extractTask(ocr, { now: NOW })!.title;
+    expect(title).toContain("BIRTHDAY PARTY");
+    expect(title).not.toContain("Shack");
+  });
+
+  it("does not say what kind of thing it is twice", () => {
+    const ocr = "BIRTHDAY PARTY\nDATE: 2 September 2026\nTIME: 1100";
+    expect(extractTask(ocr, { now: NOW })!.title).not.toMatch(/Party.*PARTY/);
   });
 
   it("does not name an invitation after its banner", () => {

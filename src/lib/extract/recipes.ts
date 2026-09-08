@@ -49,7 +49,7 @@ const EXPIRY = /\b(expires?|expiry|valid until|renew|renewal|mot|insurance|licen
  * an invitation; the name is narrow, and supplies the words for the task, so a
  * poster does not end up titled with whatever marketing line came first.
  */
-const EVENT_TRIGGER = /\b(open (event|evening|day|morning|house)|save the date|come and explore|you'?re invited|invitation|webinar|workshop|seminar|screening|performance|concert|festival|fair|kick-?off|deadline for entries)\b/i;
+const EVENT_TRIGGER = /\b(open (event|evening|day|morning|house)|save the date|come and explore|invited|invitation|birthday|party|webinar|workshop|seminar|screening|performance|concert|festival|fair|kick-?off|deadline for entries)\b/i;
 // "Save the date" and "you're invited" are banners: they say an event exists
 // without naming it, so they trigger the recipe but never supply the title.
 const EVENT_NAME = /\b(open (?:event|evening|day|morning|house)|party|webinar|workshop|seminar|screening|performance|concert|festival|fair)\b/i;
@@ -89,7 +89,18 @@ const NOT_A_NAME = /^(open|save|the|a|welcome|new|our|your|next|come|join|free|b
  * shape a name usually takes, and it identifies nothing. Without this the
  * banner outscores the actual name printed underneath it.
  */
-const BANNER = /^(you'?re invited( to)?|save the date|invitation|rsvp|please rsvp|date|time|location|venue|where|when|address)[:!.]?$/i;
+const BANNER = /^(you'?re invited( to)?|save the date|invitation|rsvp|please rsvp|date|time|place|location|venue|where|when|address)[:!.]?$/i;
+
+/**
+ * A filled-in form field. The label makes it content, not a name.
+ *
+ * "PLACE: fla Shac.. Hedge end" reads like a name to the scorer — a few words
+ * near the top — and names the venue rather than whose party it is.
+ */
+const FORM_FIELD = /^(date|time|place|location|venue|address|where|when|rsvp|tel|phone|email|contact)\b\s*[:.]/i;
+
+/** An announcement, however badly the OCR mangled the first character of it. */
+const ANNOUNCEMENT = /\binvited\b/i;
 
 /**
  * A line that is really a date, not a name.
@@ -148,6 +159,7 @@ function subject(lines: string[]): string | undefined {
   lines.forEach((line, index) => {
     const trimmed = line.trim();
     if (BANNER.test(trimmed) || DATE_LINE.test(trimmed)) return;
+    if (FORM_FIELD.test(trimmed) || ANNOUNCEMENT.test(trimmed)) return;
     const letters = line.replace(/[^a-z]/gi, "").length;
     if (letters < 4 || letters / line.length <= 0.5) return;
     const name = cleanName(line);
@@ -218,8 +230,15 @@ const event: Recipe = ({ lines, text, due, timedDue }) => {
   // "Open Event" on its own says nothing: whose open event, and where? The
   // sender is the detail that makes the task answerable.
   const who = subject(lines);
+  // "Party — BIRTHDAY PARTY" says it twice. When the name already contains
+  // what kind of thing it is, the name is enough.
+  const label = !who
+    ? what
+    : who.toLowerCase().includes(what.toLowerCase())
+      ? who
+      : `${what} — ${who}`;
   return {
-    title: tidyTitle(who ? `${what} — ${who}, ${describeDate(when)}` : `${what} — ${describeDate(when)}`),
+    title: tidyTitle(`${label}, ${describeDate(when)}`),
     dueAt: when.at,
     // Without a time this is a date someone printed, not a plan.
     confidence: when.hasTime ? "high" : "low",
@@ -234,10 +253,31 @@ const actionLine: Recipe = ({ lines, due }) => {
   return { title: tidyTitle(line), dueAt: due?.at, confidence: "high", recipe: "action-line" };
 };
 
-/** Nothing matched. Offer the most substantial line and admit we are unsure. */
-const fallback: Recipe = ({ lines, due }) => {
+/** A capture this short is probably a note, and its longest line is the note. */
+const SHORT_CAPTURE_LINES = 3;
+
+/**
+ * Nothing matched. Offer the most substantial line — but only if there is any
+ * reason to think a task is in there.
+ *
+ * A bank statement is a page of prose with no date worth acting on, no amount
+ * owed and nothing to do; handing back its longest line produced "To get your
+ * most up to date balances or find out about…" as a to-do. A long capture with
+ * no date, no amount, no reference and no instruction has no task in it, and
+ * saying so is better than inventing one. Short captures are exempt: a
+ * photographed note is exactly a couple of lines with none of those signals.
+ */
+const fallback: Recipe = ({ lines, due, amount, references }) => {
   const best = [...lines].sort((a, b) => b.length - a.length)[0];
   if (!best) return undefined;
+
+  const hasSignal =
+    due !== undefined ||
+    amount !== undefined ||
+    (references?.length ?? 0) > 0 ||
+    lines.some((line) => IMPERATIVE.test(line));
+  if (!hasSignal && lines.length > SHORT_CAPTURE_LINES) return undefined;
+
   return { title: tidyTitle(best), dueAt: due?.at, confidence: "low", recipe: "fallback" };
 };
 

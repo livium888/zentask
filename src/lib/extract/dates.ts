@@ -124,6 +124,9 @@ function findTimes(text: string): Array<{ minutes: number; index: number; raw: s
     [/\b(\d{1,2})(\d{2})\s*(am|pm)\b/gi, (m) => (m[1] && m[2] ? [m[1], m[2], m[3]] : undefined)],
     // "3pm"
     [/\b(\d{1,2})\s*(am|pm)\b/gi, (m) => (m[1] ? [m[1], "0", m[2]] : undefined)],
+    // "TIME: 1100" on a form or an invitation. The label is what makes four
+    // bare digits a clock rather than a reference number.
+    [/\btime\s*[:.]?\s*(\d{1,2})(\d{2})\b/gi, (m) => (m[1] && m[2] ? [m[1], m[2], undefined] : undefined)],
   ];
 
   for (const [pattern, read] of patterns) {
@@ -226,6 +229,19 @@ export function findDates(text: string, options: DateOptions = {}): DateMatch[] 
     push(y ? Number(y) : stated ?? inferYear(month, day, now), month, day, m.index, m[0]);
   }
 
+  // "2 Sepkemer 2026" — OCR damages month names constantly. Tolerated only in
+  // the day-month-year shape, where the number either side leaves no doubt;
+  // loosening it anywhere else is what once read "Decision" as December.
+  const damaged = new RegExp(`\\b(\\d{1,2})\\s+(${MONTH_WORD})[a-z]{1,8}\\s+(\\d{4})\\b`, "gi");
+  for (const m of text.matchAll(damaged)) {
+    const [d, mo, y] = [m[1], m[2], m[3]];
+    if (!d || !mo || !y) continue;
+    const month = monthIndex(mo);
+    if (month === undefined) continue;
+    if (out.some((hit) => Math.abs(hit.index - m.index) < 4)) continue;
+    push(Number(y), month, Number(d), m.index, m[0]);
+  }
+
   // September 12, 2026 / Sep 12
   const monthDay = new RegExp(
     `\\b(${MONTH_WORD})\\b\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s*(\\d{4}))?\\b`,
@@ -305,22 +321,34 @@ function rank(matches: DateMatch[], text: string): DateMatch[] {
   return [...matches].sort((a, b) => {
     const byCue = Number(cued(b)) - Number(cued(a));
     if (byCue !== 0) return byCue;
-    const byModel = Number(b.fromModel ?? false) - Number(a.fromModel ?? false);
-    if (byModel !== 0) return byModel;
     const bySpecificity = SPECIFICITY_RANK[b.specificity] - SPECIFICITY_RANK[a.specificity];
     if (bySpecificity !== 0) return bySpecificity;
+    // Below specificity, not above it. The model resolving the word
+    // "WEDNESDAY" must not beat the "30TH SEPTEMBER" printed two lines down.
+    const byModel = Number(b.fromModel ?? false) - Number(a.fromModel ?? false);
+    if (byModel !== 0) return byModel;
     const byTime = Number(b.hasTime) - Number(a.hasTime);
     if (byTime !== 0) return byTime;
     return a.index - b.index;
   });
 }
 
+/**
+ * How far back a date can sit and still be the point of the capture.
+ *
+ * An invitation photographed a few days after the party still concerns that
+ * party. A bank statement printed in 2021 does not give a task a due date.
+ */
+const STALE_AFTER_DAYS = 60;
+
 /** Everything found, best first. Dates already past are kept only if nothing is ahead. */
 function candidates(text: string, options: DateOptions): DateMatch[] {
   const now = options.now ?? new Date();
   const all = mergeDates(findDates(text, options), options.extraDates ?? []);
   const future = all.filter((m) => m.at >= now.getTime() - 86_400_000);
-  return rank(future.length > 0 ? future : all, text);
+  if (future.length > 0) return rank(future, text);
+  const recent = all.filter((m) => m.at >= now.getTime() - STALE_AFTER_DAYS * 86_400_000);
+  return rank(recent, text);
 }
 
 export function pickDueDate(text: string, options: DateOptions = {}): DateMatch | undefined {
@@ -337,25 +365,30 @@ export function pickTimedDate(text: string, options: DateOptions = {}): DateMatc
   return candidates(text, options).find((m) => m.hasTime);
 }
 
-/** How far apart two readings of the same date can sit and still be the same one. */
-const SAME_MENTION_CHARS = 25;
-
 /**
  * One date mentioned once should not appear twice.
  *
- * Where a rule and the model both read the same words, the model's reading
- * wins: it resolves relative phrases against a reference time and knows
- * formats no regex here covers.
+ * Where a rule and the model read the *same words*, the model's reading wins:
+ * it resolves relative phrases against a reference time and knows formats no
+ * regex here covers.
+ *
+ * "Same words" means overlapping spans, or the same calendar day. An earlier
+ * version treated anything within twenty-five characters as a duplicate, which
+ * on a poster reading "WEDNESDAY THE DATE / 30TH / SEPTEMBER" let the model's
+ * weekday delete the explicit date sitting two lines below it — before the
+ * ranking that exists to prevent exactly that ever got to see it.
  */
 export function mergeDates(fromRules: DateMatch[], fromModel: DateMatch[]): DateMatch[] {
   const model = fromModel.map((match) => ({ ...match, fromModel: true }));
+
+  const overlaps = (a: DateMatch, b: DateMatch) =>
+    a.index < b.index + b.raw.length && b.index < a.index + a.raw.length;
+
+  const sameDay = (a: DateMatch, b: DateMatch) =>
+    new Date(a.at).toDateString() === new Date(b.at).toDateString();
+
   const kept = fromRules.filter(
-    (rule) =>
-      !model.some(
-        (found) =>
-          Math.abs(found.index - rule.index) <= SAME_MENTION_CHARS ||
-          new Date(found.at).toDateString() === new Date(rule.at).toDateString(),
-      ),
+    (rule) => !model.some((found) => overlaps(found, rule) || sameDay(found, rule)),
   );
   return [...model, ...kept].sort((a, b) => a.index - b.index);
 }

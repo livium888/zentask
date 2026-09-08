@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EntityType, type EntityAnnotation } from "@capacitor-mlkit/entity-extraction";
 import { toHints } from "./entities";
-import { extractTask } from "./extract";
+import { cleanedText, extractTask } from "./extract";
 
 const NOW = new Date(2026, 8, 8, 10, 0);
 
@@ -74,5 +74,56 @@ describe("hints reaching the recipes", () => {
   it("works unchanged when no model has run", () => {
     const out = extractTask("BRITISH GAS\nTotal amount due £84.60\nPayment due by 30/09/2026", { now: NOW })!;
     expect(out.title).toContain("Pay £84.60");
+  });
+});
+
+describe("what the model is given to read", () => {
+  it("is the cleaned text, not the raw OCR", () => {
+    // The phone's status bar is not part of the poster. Reading it gave the
+    // model a clock ("18:45") and a weekday to resolve, and its answer then
+    // beat the real date printed on the poster.
+    const raw = "18:45 18° ring l 82)\nPosts\nOPEN THE RIVERSIDE ACADEMY DOORS\n2 days ago";
+    const cleaned = cleanedText(raw);
+    expect(cleaned).not.toContain("18:45");
+    expect(cleaned).not.toContain("Posts");
+    expect(cleaned).not.toContain("days ago");
+    expect(cleaned).toContain("RIVERSIDE ACADEMY");
+  });
+
+  it("gives hint positions that line up with the rules", () => {
+    // mergeDates compares indices; if hints came from a different string than
+    // the rules read, two readings of one date look like two dates.
+    const raw = "Posts\nDue 30/09/2026";
+    const cleaned = cleanedText(raw);
+    expect(cleaned.indexOf("30/09/2026")).toBeGreaterThanOrEqual(0);
+    expect(cleaned).toBe("Due 30/09/2026");
+  });
+});
+
+describe("a model reading versus a rule reading", () => {
+  it("does not let the model's bare weekday beat an explicit date", () => {
+    const text = "WEDNESDAY THE DATE\n30TH\nSEPTEMBER";
+    const out = extractTask(text, {
+      now: NOW,
+      extraDates: [
+        {
+          at: new Date(2026, 8, 9, 18, 45).getTime(),
+          hasTime: true,
+          raw: "WEDNESDAY",
+          index: 0,
+          specificity: "weekday",
+        },
+      ],
+    })!;
+    expect(new Date(out.dueAt!).getDate()).toBe(30);
+  });
+
+  it("still prefers the model where both are equally specific", () => {
+    const at = new Date(2026, 9, 3).getTime();
+    const out = extractTask("Renew by 03/10/2026", {
+      now: NOW,
+      extraDates: [{ at, hasTime: false, raw: "03/10/2026", index: 9, specificity: "explicit" }],
+    })!;
+    expect(out.dueAt).toBe(at);
   });
 });
