@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.local
+.DS_Store
+*.tsbuildinfo
+coverage/
+
+# The native project is committed so the manifest and permissions are
+# reviewable; its build output and local SDK pointers are not.
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/capacitor-cordova-android-plugins/

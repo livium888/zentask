@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ZenTask</string>
+    <string name="title_activity_main">ZenTask</string>
+    <string name="package_name">app.zentask.capture</string>
+    <string name="custom_url_scheme">app.zentask.capture</string>
+</resources>

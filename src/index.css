@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0f0f10;
+  --color-paper: #faf9f7;
+  --color-muted: #8a8a8f;
+  --color-line: #232326;
+  --color-accent: #6ee7b7;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  /* Captures happen one-handed, often outdoors; keep the safe areas clear. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  -webkit-font-smoothing: antialiased;
+}
