@@ -51,6 +51,7 @@ export function reviewFromText(
     proposedText: extraction.title,
     proposedDueAt: extraction.dueAt,
     confidence: extraction.confidence,
+    recipe: extraction.recipe,
   };
 }
 

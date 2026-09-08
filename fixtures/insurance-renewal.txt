@@ -1,0 +1,9 @@
+# name: renewal notice
+# now: 2026-09-08T10:00
+# status: enforced
+# expect-recipe: expiry
+# expect-due: 2026-10-01
+---
+ADMIRAL INSURANCE
+Your policy expires on 01/10/2026
+Renew online to keep cover

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { PendingReview } from "@/types";
 import { formatDue } from "@/lib/format";
+import { reportCapture } from "@/lib/report";
 
 /**
  * One capture, one decision.
@@ -20,6 +21,18 @@ export function ReviewCard({
 }) {
   const [text, setText] = useState(review.proposedText);
   const [showRaw, setShowRaw] = useState(false);
+  const [reported, setReported] = useState<"idle" | "sent" | "failed">("idle");
+
+  // Reporting a bad capture is the only way the extraction rules ever see real
+  // text, so it sits next to the raw text rather than buried in settings.
+  async function report() {
+    try {
+      await reportCapture(review);
+      setReported("sent");
+    } catch {
+      setReported("failed");
+    }
+  }
 
   return (
     <li className="rounded-2xl border border-line bg-white/[0.03] p-4">
@@ -52,6 +65,17 @@ export function ReviewCard({
           className="underline underline-offset-2"
         >
           {showRaw ? "hide what we read" : "what we read"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void report()}
+          className="underline underline-offset-2"
+        >
+          {reported === "sent"
+            ? "reported — thank you"
+            : reported === "failed"
+              ? "couldn't share that"
+              : "got this wrong?"}
         </button>
       </div>
 

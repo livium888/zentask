@@ -1,0 +1,10 @@
+# name: receipt with nothing to do
+# now: 2026-09-08T10:00
+# status: enforced
+# expect-recipe: fallback
+# expect-confidence: low
+# expect-due: none
+---
+SUNNYSIDE CAFE
+Thank you for your visit
+See you soon

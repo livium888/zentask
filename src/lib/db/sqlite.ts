@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS pending (
   captured_at INTEGER NOT NULL,
   proposed_text TEXT NOT NULL,
   proposed_due_at INTEGER,
-  confidence TEXT NOT NULL
+  confidence TEXT NOT NULL,
+  recipe TEXT
 );
 `;
 
@@ -57,6 +58,7 @@ type PendingRow = {
   proposed_text: string;
   proposed_due_at: number | null;
   confidence: string;
+  recipe: string | null;
 };
 
 /** SQLite has no NULL in our domain types; absent is absent. */
@@ -87,6 +89,7 @@ function toPending(row: PendingRow): PendingReview {
     proposedText: row.proposed_text,
     proposedDueAt: optional(row.proposed_due_at),
     confidence: row.confidence === "high" ? "high" : "low",
+    recipe: optional(row.recipe),
   };
 }
 
@@ -140,10 +143,10 @@ export function createSqliteStore(): TaskStore {
     async addPending(review) {
       await (await ready()).run(
         `INSERT OR REPLACE INTO pending
-         (id, source, raw_text, image_path, captured_at, proposed_text, proposed_due_at, confidence)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, source, raw_text, image_path, captured_at, proposed_text, proposed_due_at, confidence, recipe)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [review.id, review.source, review.rawText, review.imagePath ?? null, review.capturedAt,
-         review.proposedText, review.proposedDueAt ?? null, review.confidence],
+         review.proposedText, review.proposedDueAt ?? null, review.confidence, review.recipe ?? null],
       );
     },
     async removePending(id) {

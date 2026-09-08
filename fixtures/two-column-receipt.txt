@@ -1,0 +1,13 @@
+# name: bill whose columns arrive interleaved
+# now: 2026-09-08T10:00
+# status: enforced
+# expect-recipe: bill
+# expect-title-contains: Pay £84.60
+---
+BRITISH GAS
+VAT
+Total amount due
+Payment due by
+£4.20
+£84.60
+30/09/2026

@@ -1,0 +1,14 @@
+# name: utility bill with a payment deadline
+# now: 2026-09-08T10:00
+# status: enforced
+# expect-recipe: bill
+# expect-title-contains: Pay £84.60
+# expect-due: 2026-09-30
+# expect-confidence: high
+---
+BRITISH GAS
+Account 4820 1193
+Your bill
+VAT £4.20
+Total amount due £84.60
+Payment due by 30/09/2026

@@ -1,0 +1,11 @@
+# name: appointment card with a time
+# now: 2026-09-08T10:00
+# status: enforced
+# expect-recipe: appointment
+# expect-due: 2026-09-10
+# expect-confidence: high
+---
+RIVERSIDE DENTAL
+Your next appointment
+Thursday 10 Sep at 14:30
+Please arrive 10 minutes early

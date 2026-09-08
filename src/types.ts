@@ -25,6 +25,8 @@ export type PendingReview = {
   proposedText: string;
   proposedDueAt?: number;
   confidence: Confidence;
+  /** Which rule produced the proposal. Carried so a bad capture can be reported. */
+  recipe?: string;
 };
 
 export type Confidence = "high" | "low";

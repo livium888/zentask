@@ -1,0 +1,10 @@
+# name: collection slip with a tracking reference
+# now: 2026-09-08T10:00
+# status: enforced
+# expect-recipe: parcel
+# expect-title-contains: SD9284471GB
+---
+ROYAL MAIL
+Something for you
+Awaiting collection at your local office
+Ref: SD9284471GB

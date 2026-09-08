@@ -28,6 +28,10 @@ jobs:
       - name: Unit tests
         run: bun run test
 
+      # Exercises scripts/score.ts and fails if an enforced fixture regresses.
+      - name: Score the extraction corpus
+        run: bun run score
+
       - name: Typecheck and build
         run: bun run build
 

@@ -19,7 +19,9 @@ field here has to earn its place against that.
 
 1. **Read the picture.** ML Kit text recognition, on device. The Latin model
    ships inside the APK, so the first capture works with no download and no
-   network.
+   network. The flat `text` field is not used: it walks block by block, so a
+   two-column row arrives split. Rows are rebuilt from each line's bounding box
+   (`extract/layout.ts`) before anything tries to read them.
 2. **Extract a task.** Deterministic rules — dates and times, amounts,
    references — combined by a small set of recipes (`bill`, `appointment`,
    `expiry`, `parcel`, `action-line`). Instant, offline, free.
@@ -39,9 +41,30 @@ slow on the mid-range phones most people carry.
 ```bash
 bun install
 bun run dev      # browser: UI and typing work, reading pictures does not
-bun run test     # extraction, storage and formatting
+bun run test     # extraction, storage, layout and formatting
+bun run score    # extraction scored against the OCR corpus
 bun run build    # typecheck + web build
 ```
+
+`scripts/score.ts` is deliberately outside the typechecked projects: it imports
+from `src`, and pulling that into a Node project would drag the whole app into
+one with neither DOM nor JSX. CI runs it instead, so a broken script fails the
+build.
+
+## Measuring extraction
+
+The unit tests use text someone invented, which proves the rules do what was
+intended and nothing about whether they survive a real receipt. `fixtures/`
+holds real OCR dumps with what the app should make of them, and `bun run score`
+turns "it works sometimes" into a number.
+
+When a capture goes wrong, tap **got this wrong?** on the review card. It shares
+a ready-made fixture file — the raw OCR plus what the app actually produced —
+which drops straight into `fixtures/`. See `fixtures/README.md`.
+
+Cases marked `# status: pending` are known failures: reported by the scorer,
+not enforced by the build. Promoting one to `enforced` is what progress looks
+like.
 
 Reading pictures needs the installed Android app — there is no on-device OCR
 model in a browser.
