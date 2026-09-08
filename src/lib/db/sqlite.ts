@@ -1,6 +1,6 @@
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from "@capacitor-community/sqlite";
-import type { PendingReview, Task, TaskSource } from "@/types";
-import { newId, type NewTask, type TaskStore } from "./types";
+import type { Confidence, PendingReview, Sample, SampleVerdict, Task, TaskSource } from "@/types";
+import { MAX_SAMPLES, newId, type NewTask, type TaskStore } from "./types";
 
 /**
  * On-device SQLite. Nothing leaves the phone.
@@ -36,6 +36,20 @@ CREATE TABLE IF NOT EXISTS pending (
   confidence TEXT NOT NULL,
   recipe TEXT
 );
+
+CREATE TABLE IF NOT EXISTS samples (
+  id TEXT PRIMARY KEY NOT NULL,
+  captured_at INTEGER NOT NULL,
+  source TEXT NOT NULL,
+  raw_text TEXT NOT NULL,
+  proposed_text TEXT NOT NULL,
+  proposed_due_at INTEGER,
+  confidence TEXT NOT NULL,
+  recipe TEXT,
+  verdict TEXT NOT NULL,
+  final_text TEXT
+);
+CREATE INDEX IF NOT EXISTS samples_captured_at ON samples (captured_at);
 `;
 
 type TaskRow = {
@@ -90,6 +104,34 @@ function toPending(row: PendingRow): PendingReview {
     proposedDueAt: optional(row.proposed_due_at),
     confidence: row.confidence === "high" ? "high" : "low",
     recipe: optional(row.recipe),
+  };
+}
+
+type SampleRow = {
+  id: string;
+  captured_at: number;
+  source: string;
+  raw_text: string;
+  proposed_text: string;
+  proposed_due_at: number | null;
+  confidence: string;
+  recipe: string | null;
+  verdict: string;
+  final_text: string | null;
+};
+
+function toSample(row: SampleRow): Sample {
+  return {
+    id: row.id,
+    capturedAt: row.captured_at,
+    source: row.source as TaskSource,
+    rawText: row.raw_text,
+    proposedText: row.proposed_text,
+    proposedDueAt: optional(row.proposed_due_at),
+    confidence: row.confidence as Confidence,
+    recipe: optional(row.recipe),
+    verdict: row.verdict as SampleVerdict,
+    finalText: optional(row.final_text),
   };
 }
 
@@ -151,6 +193,32 @@ export function createSqliteStore(): TaskStore {
     },
     async removePending(id) {
       await (await ready()).run("DELETE FROM pending WHERE id = ?", [id]);
+    },
+    async listSamples() {
+      const rows = await select<SampleRow>("SELECT * FROM samples ORDER BY captured_at ASC");
+      return rows.map(toSample);
+    },
+    async addSample(sample) {
+      const db = await ready();
+      await db.run(
+        `INSERT OR REPLACE INTO samples
+         (id, captured_at, source, raw_text, proposed_text, proposed_due_at,
+          confidence, recipe, verdict, final_text)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [sample.id, sample.capturedAt, sample.source, sample.rawText, sample.proposedText,
+         sample.proposedDueAt ?? null, sample.confidence, sample.recipe ?? null,
+         sample.verdict, sample.finalText ?? null],
+      );
+      // Keep the log bounded without needing a separate tidy-up anywhere.
+      await db.run(
+        `DELETE FROM samples WHERE id NOT IN (
+           SELECT id FROM samples ORDER BY captured_at DESC LIMIT ?
+         )`,
+        [MAX_SAMPLES],
+      );
+    },
+    async clearSamples() {
+      await (await ready()).run("DELETE FROM samples", []);
     },
   };
 }

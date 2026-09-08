@@ -21,6 +21,8 @@ export type RecipeInput = {
   text: string;
   due?: DateMatch;
   amount?: MoneyMatch;
+  /** Tracking and reference numbers the entity extractor recognised. */
+  references?: string[];
   now: Date;
 };
 
@@ -158,9 +160,10 @@ const bill: Recipe = ({ lines, text, due, amount }) => {
   return { title: tidyTitle(title), dueAt: due?.at, confidence: "high", recipe: "bill" };
 };
 
-const parcel: Recipe = ({ lines, text, due }) => {
+const parcel: Recipe = ({ lines, text, due, references }) => {
   if (!PARCEL.test(text)) return undefined;
-  const ref = reference(text);
+  // A tracking number the model recognised is a fact; the regex is a guess.
+  const ref = references?.[0] ?? reference(text);
   const who = subject(lines);
   const what = ref ? `parcel ${ref}` : "parcel";
   const title = who ? `Collect ${what} — ${who}` : `Collect ${what}`;

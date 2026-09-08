@@ -24,7 +24,19 @@ field here has to earn its place against that.
    (`extract/layout.ts`) before anything tries to read them.
 2. **Extract a task.** Deterministic rules — dates and times, amounts,
    references — combined by a small set of recipes (`bill`, `appointment`,
-   `expiry`, `parcel`, `action-line`). Instant, offline, free.
+   `expiry`, `event`, `parcel`, `action-line`). Instant, offline, free.
+
+   ML Kit's entity extractor sharpens the parsing layer where it is available:
+   it resolves dates the rules cannot reach ("the 3rd of next month"), reads
+   amounts, and recognises tracking numbers the regex only guesses at. Its
+   readings win where the two disagree — Google trained it on this and a regex
+   in this repository did not have that advantage.
+
+   It is not a comprehension model: it says a date is here and means this
+   instant, not what the task is. The recipes still decide that, which is why
+   it slots in underneath them. The model is a few megabytes, downloaded once
+   in the background, and nothing waits on it — until it arrives the rules do
+   all the work, exactly as before.
 3. **Ask.** The proposal lands in a review queue with the text it came from one
    tap away. Nothing files itself.
 
@@ -78,6 +90,32 @@ turns "it works sometimes" into a number.
 When a capture goes wrong, tap **got this wrong?** on the review card. It shares
 a ready-made fixture file — the raw OCR plus what the app actually produced —
 which drops straight into `fixtures/`. See `fixtures/README.md`.
+
+### Collecting in bulk
+
+Reporting captures one at a time does not scale. The app keeps the ones with
+something to teach, on the phone, and sends them in one go when you ask:
+
+- anything it was unsure about
+- **anything you corrected** — your edit *is* the right answer, recorded at the
+  moment you knew it, and it is written straight into the fixture's
+  `expect-title-contains`
+- anything you threw away
+
+A confident proposal you accepted unchanged is not kept: it is already covered
+by the tests, and logging it would bury the interesting cases. The log is
+capped at 200 and can be switched off or deleted from the bottom of the screen.
+Nothing is sent anywhere until you tap send.
+
+Then split the export into fixtures:
+
+```bash
+bun scripts/import-samples.ts ~/Downloads/zentask-log.txt
+bun run score
+```
+
+Every case arrives `pending` — reported, not enforced — so a batch of new
+failures is a backlog rather than a broken build.
 
 Cases marked `# status: pending` are known failures: reported by the scorer,
 not enforced by the build. Promoting one to `enforced` is what progress looks

@@ -88,9 +88,21 @@ export function findMoney(text: string): MoneyMatch[] {
   return out.sort((a, b) => a.index - b.index);
 }
 
-/** The amount a bill is actually asking for: the largest one on the page. */
-export function pickAmount(text: string): MoneyMatch | undefined {
-  const all = findMoney(text);
+/**
+ * The amount a bill is actually asking for: the largest one on the page.
+ *
+ * Amounts the entity extractor found are merged in first; where both read the
+ * same words, the model's reading is the one kept.
+ */
+export function pickAmount(text: string, extra: MoneyMatch[] = []): MoneyMatch | undefined {
+  const kept = findMoney(text).filter(
+    (rule) => !extra.some((found) => Math.abs(found.index - rule.index) <= 12),
+  );
+  const all = [...extra, ...kept];
   if (all.length === 0) return undefined;
   return all.reduce((best, m) => (m.amount > best.amount ? m : best));
+}
+
+export function formatAmount(amount: number, currency: string): string {
+  return format(amount, currency);
 }

@@ -53,9 +53,8 @@ export class ReportUnavailable extends Error {
   }
 }
 
-/** Hand the fixture to whatever the person uses to send themselves things. */
-export async function reportCapture(review: PendingReview): Promise<void> {
-  const text = asFixture(review);
+/** Hand any text to whatever the person uses to send themselves things. */
+export async function reportText(text: string, title: string): Promise<void> {
   const { value } = await Share.canShare();
   if (!value) {
     // A browser without the Web Share API still has a clipboard.
@@ -63,5 +62,9 @@ export async function reportCapture(review: PendingReview): Promise<void> {
     await navigator.clipboard.writeText(text);
     return;
   }
-  await Share.share({ title: "ZenTask capture", text, dialogTitle: "Send this capture" });
+  await Share.share({ title, text, dialogTitle: title });
+}
+
+export async function reportCapture(review: PendingReview): Promise<void> {
+  await reportText(asFixture(review), "ZenTask capture");
 }

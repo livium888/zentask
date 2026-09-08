@@ -30,3 +30,30 @@ export type PendingReview = {
 };
 
 export type Confidence = "high" | "low";
+
+/**
+ * A capture worth learning from.
+ *
+ * Not every capture: one the app got right and you accepted without changing
+ * teaches nothing. What is kept is the residue — anything it was unsure about,
+ * anything you corrected, anything you threw away. A correction is the most
+ * valuable of the three, because your edit *is* the right answer, recorded
+ * without you having to write it down anywhere.
+ *
+ * These never leave the phone unless you export them.
+ */
+export type Sample = {
+  id: string;
+  capturedAt: number;
+  source: TaskSource;
+  rawText: string;
+  proposedText: string;
+  proposedDueAt?: number;
+  confidence: Confidence;
+  recipe?: string;
+  verdict: SampleVerdict;
+  /** What you changed it to. Present only when the verdict is "edited". */
+  finalText?: string;
+};
+
+export type SampleVerdict = "edited" | "dismissed" | "unsure";

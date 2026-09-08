@@ -5,6 +5,16 @@ import { captureFromImage, captureFromShare, NothingToRead, reviewFromText } fro
 import { createStore, type TaskStore } from "./lib/db";
 import { isOcrAvailable, OcrUnavailable } from "./lib/ocr";
 import { clearShared, onShareReceived, takeShared, type SharePayload } from "./lib/share-target";
+import { ensureModel } from "./lib/entities";
+import { reportText } from "./lib/report";
+import {
+  asBulkExport,
+  isCollectingSamples,
+  sampleFrom,
+  setCollectingSamples,
+  verdictFor,
+} from "./lib/samples";
+import type { Sample } from "./types";
 import type { PendingReview, Task } from "./types";
 
 /**
@@ -23,12 +33,35 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string>();
   const [draft, setDraft] = useState("");
+  const [samples, setSamples] = useState<Sample[]>([]);
+  const [collecting, setCollecting] = useState(isCollectingSamples);
 
   const refresh = useCallback(async (from: TaskStore) => {
-    const [nextTasks, nextPending] = await Promise.all([from.listTasks(), from.listPending()]);
+    const [nextTasks, nextPending, nextSamples] = await Promise.all([
+      from.listTasks(),
+      from.listPending(),
+      from.listSamples(),
+    ]);
     setTasks(nextTasks);
     setPending(nextPending);
+    setSamples(nextSamples);
   }, []);
+
+  /**
+   * Keep anything with something to teach.
+   *
+   * Silent by design: the point of collecting in bulk is that it costs the
+   * user nothing at the moment of capture.
+   */
+  const remember = useCallback(
+    async (from: TaskStore, review: PendingReview, outcome: "kept" | "dismissed", finalText?: string) => {
+      if (!isCollectingSamples()) return;
+      const verdict = verdictFor(review, outcome, finalText);
+      if (!verdict) return;
+      await from.addSample(sampleFrom(review, verdict, finalText));
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +75,11 @@ export function App() {
       cancelled = true;
     };
   }, [refresh]);
+
+  useEffect(() => {
+    // Nothing waits on this. Until it lands, the rules do all the work.
+    void ensureModel();
+  }, []);
 
   const acceptShare = useCallback(
     async (payload: SharePayload) => {
@@ -130,6 +168,7 @@ export function App() {
 
   async function confirm(review: PendingReview, text: string) {
     if (!store) return;
+    await remember(store, review, "kept", text);
     await store.addTask({
       text,
       source: review.source,
@@ -143,6 +182,7 @@ export function App() {
 
   async function dismiss(review: PendingReview) {
     if (!store) return;
+    await remember(store, review, "dismissed");
     await store.removePending(review.id);
     await refresh(store);
   }
@@ -157,6 +197,28 @@ export function App() {
     if (!store) return;
     await store.removeTask(task.id);
     await refresh(store);
+  }
+
+  async function exportSamples() {
+    if (samples.length === 0) return;
+    try {
+      await reportText(asBulkExport(samples), "ZenTask capture log");
+      setNote(`Sent ${samples.length}.`);
+    } catch {
+      setNote("Couldn't share that.");
+    }
+  }
+
+  async function forgetSamples() {
+    if (!store) return;
+    await store.clearSamples();
+    await refresh(store);
+  }
+
+  function toggleCollecting() {
+    const next = !collecting;
+    setCollectingSamples(next);
+    setCollecting(next);
   }
 
   const open = tasks.filter((task) => !task.done);
@@ -200,6 +262,29 @@ export function App() {
             <TaskList tasks={done} onToggle={toggle} onRemove={remove} />
           </details>
         )}
+      </section>
+
+      <section className="mt-10 border-t border-line pt-4 text-xs text-muted" aria-label="Improving it">
+        <p>
+          {collecting
+            ? "Captures it gets wrong are kept on this phone so they can be fixed."
+            : "Not keeping any captures."}
+        </p>
+        <div className="mt-2 flex flex-wrap gap-3">
+          <button type="button" onClick={toggleCollecting} className="underline underline-offset-2">
+            {collecting ? "stop keeping them" : "start keeping them"}
+          </button>
+          {samples.length > 0 && (
+            <>
+              <button type="button" onClick={() => void exportSamples()} className="underline underline-offset-2">
+                send {samples.length}
+              </button>
+              <button type="button" onClick={() => void forgetSamples()} className="underline underline-offset-2">
+                delete them
+              </button>
+            </>
+          )}
+        </div>
       </section>
 
       <div className="fixed inset-x-0 bottom-0 mx-auto max-w-md bg-ink/95 px-5 pb-6 pt-3 backdrop-blur">

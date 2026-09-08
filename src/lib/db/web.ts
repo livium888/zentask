@@ -1,5 +1,5 @@
-import type { PendingReview, Task } from "@/types";
-import { newId, type NewTask, type TaskStore } from "./types";
+import type { PendingReview, Sample, Task } from "@/types";
+import { MAX_SAMPLES, newId, type NewTask, type TaskStore } from "./types";
 
 /**
  * Browser storage, used by `bun run dev` and by the web build.
@@ -10,9 +10,10 @@ import { newId, type NewTask, type TaskStore } from "./types";
  */
 
 const DB_NAME = "zentask";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const TASKS = "tasks";
 const PENDING = "pending";
+const SAMPLES = "samples";
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -21,6 +22,7 @@ function open(): Promise<IDBDatabase> {
       const db = request.result;
       if (!db.objectStoreNames.contains(TASKS)) db.createObjectStore(TASKS, { keyPath: "id" });
       if (!db.objectStoreNames.contains(PENDING)) db.createObjectStore(PENDING, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(SAMPLES)) db.createObjectStore(SAMPLES, { keyPath: "id" });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -70,6 +72,20 @@ export function createWebStore(): TaskStore {
     },
     async removePending(id) {
       await run(await ready(), PENDING, "readwrite", (s) => s.delete(id));
+    },
+    async listSamples() {
+      const all = await run<Sample[]>(await ready(), SAMPLES, "readonly", (s) => s.getAll());
+      return all.sort((a, b) => a.capturedAt - b.capturedAt);
+    },
+    async addSample(sample) {
+      const conn = await ready();
+      await run(conn, SAMPLES, "readwrite", (s) => s.put(sample));
+      const all = await run<Sample[]>(conn, SAMPLES, "readonly", (s) => s.getAll());
+      const excess = all.sort((a, b) => a.capturedAt - b.capturedAt).slice(0, -MAX_SAMPLES);
+      for (const old of excess) await run(conn, SAMPLES, "readwrite", (s) => s.delete(old.id));
+    },
+    async clearSamples() {
+      await run(await ready(), SAMPLES, "readwrite", (s) => s.clear());
     },
   };
 }

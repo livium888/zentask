@@ -29,12 +29,22 @@ export type DateMatch = {
   raw: string;
   index: number;
   specificity: DateSpecificity;
+  /** True when an on-device model found this, rather than the rules. */
+  fromModel?: boolean;
 };
 
 export type DateOptions = {
   now?: Date;
   /** Read 03/04 as 3 April (true) or March 4 (false). */
   dayFirst?: boolean;
+  /**
+   * Dates found by ML Kit's entity extractor, merged in alongside the rules.
+   *
+   * The rules stay the instant path — they need no model and no download — and
+   * the model's readings are preferred where the two disagree, because it was
+   * trained on this and a regex was not.
+   */
+  extraDates?: DateMatch[];
 };
 
 const MONTHS: Record<string, number> = {
@@ -257,7 +267,7 @@ const CUE_WINDOW = 30;
 
 export function pickDueDate(text: string, options: DateOptions = {}): DateMatch | undefined {
   const now = options.now ?? new Date();
-  const matches = findDates(text, options);
+  const matches = mergeDates(findDates(text, options), options.extraDates ?? []);
   if (matches.length === 0) return undefined;
 
   const future = matches.filter((m) => m.at >= now.getTime() - 86_400_000);
@@ -279,10 +289,35 @@ export function pickDueDate(text: string, options: DateOptions = {}): DateMatch 
   return [...pool].sort((a, b) => {
     const byCue = Number(cued(b)) - Number(cued(a));
     if (byCue !== 0) return byCue;
+    const byModel = Number(b.fromModel ?? false) - Number(a.fromModel ?? false);
+    if (byModel !== 0) return byModel;
     const bySpecificity = SPECIFICITY_RANK[b.specificity] - SPECIFICITY_RANK[a.specificity];
     if (bySpecificity !== 0) return bySpecificity;
     const byTime = Number(b.hasTime) - Number(a.hasTime);
     if (byTime !== 0) return byTime;
     return a.index - b.index;
   })[0];
+}
+
+/** How far apart two readings of the same date can sit and still be the same one. */
+const SAME_MENTION_CHARS = 25;
+
+/**
+ * One date mentioned once should not appear twice.
+ *
+ * Where a rule and the model both read the same words, the model's reading
+ * wins: it resolves relative phrases against a reference time and knows
+ * formats no regex here covers.
+ */
+export function mergeDates(fromRules: DateMatch[], fromModel: DateMatch[]): DateMatch[] {
+  const model = fromModel.map((match) => ({ ...match, fromModel: true }));
+  const kept = fromRules.filter(
+    (rule) =>
+      !model.some(
+        (found) =>
+          Math.abs(found.index - rule.index) <= SAME_MENTION_CHARS ||
+          new Date(found.at).toDateString() === new Date(rule.at).toDateString(),
+      ),
+  );
+  return [...model, ...kept].sort((a, b) => a.index - b.index);
 }

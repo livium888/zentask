@@ -1,4 +1,4 @@
-import type { PendingReview, Task, TaskSource } from "@/types";
+import type { PendingReview, Sample, Task, TaskSource } from "@/types";
 
 export type NewTask = {
   text: string;
@@ -25,7 +25,13 @@ export interface TaskStore {
   listPending(): Promise<PendingReview[]>;
   addPending(review: PendingReview): Promise<void>;
   removePending(id: string): Promise<void>;
+  listSamples(): Promise<Sample[]>;
+  addSample(sample: Sample): Promise<void>;
+  clearSamples(): Promise<void>;
 }
+
+/** Enough to be worth exporting, few enough never to matter on a phone. */
+export const MAX_SAMPLES = 200;
 
 export function newId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;

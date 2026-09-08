@@ -11,7 +11,7 @@
 
 import type { Confidence } from "@/types";
 import { pickDueDate, type DateOptions } from "./dates";
-import { pickAmount } from "./money";
+import { pickAmount, type MoneyMatch } from "./money";
 import { RECIPES } from "./recipes";
 import { toLines } from "./text";
 
@@ -22,7 +22,14 @@ export type Extraction = {
   recipe: string;
 };
 
-export function extractTask(raw: string, options: DateOptions = {}): Extraction | undefined {
+export type ExtractOptions = DateOptions & {
+  /** Amounts found by the on-device entity extractor. */
+  extraMoney?: MoneyMatch[];
+  /** Tracking and reference numbers it recognised. */
+  extraReferences?: string[];
+};
+
+export function extractTask(raw: string, options: ExtractOptions = {}): Extraction | undefined {
   const lines = toLines(raw);
   if (lines.length === 0) return undefined;
 
@@ -32,7 +39,8 @@ export function extractTask(raw: string, options: DateOptions = {}): Extraction 
     lines,
     text,
     due: pickDueDate(text, { ...options, now }),
-    amount: pickAmount(text),
+    amount: pickAmount(text, options.extraMoney),
+    references: options.extraReferences,
     now,
   };
 
@@ -44,5 +52,6 @@ export function extractTask(raw: string, options: DateOptions = {}): Extraction 
 }
 
 export { findDates, pickDueDate } from "./dates";
-export { findMoney, pickAmount } from "./money";
+export { findMoney, pickAmount, formatAmount, type MoneyMatch } from "./money";
+export { mergeDates, type DateMatch } from "./dates";
 export { toLines, tidyTitle } from "./text";

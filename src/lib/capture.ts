@@ -4,6 +4,7 @@ import { extractTask } from "./extract";
 import { newId } from "./db/types";
 import { readImageText } from "./ocr";
 import type { SharePayload } from "./share-target";
+import { findEntities, NO_HINTS, type EntityHints } from "./entities";
 
 /**
  * Picture in, proposed task out — the one path that has to stay fast.
@@ -39,9 +40,15 @@ async function pickImage(source: TaskSource): Promise<string> {
 export function reviewFromText(
   rawText: string,
   source: TaskSource,
-  options: { imagePath?: string; now?: Date } = {},
+  options: { imagePath?: string; now?: Date; hints?: EntityHints } = {},
 ): PendingReview {
-  const extraction = extractTask(rawText, { now: options.now });
+  const hints = options.hints ?? NO_HINTS;
+  const extraction = extractTask(rawText, {
+    now: options.now,
+    extraDates: hints.dates,
+    extraMoney: hints.money,
+    extraReferences: hints.references,
+  });
   if (!extraction) throw new NothingToRead();
   return {
     id: newId(),
@@ -59,7 +66,7 @@ export function reviewFromText(
 export async function captureFromImage(source: "camera" | "gallery"): Promise<PendingReview> {
   const path = await pickImage(source);
   const rawText = await readImageText(path);
-  return reviewFromText(rawText, source, { imagePath: path });
+  return reviewFromText(rawText, source, { imagePath: path, hints: await findEntities(rawText) });
 }
 
 /**
@@ -71,8 +78,13 @@ export async function captureFromImage(source: "camera" | "gallery"): Promise<Pe
 export async function captureFromShare(payload: SharePayload): Promise<PendingReview> {
   if (payload.imagePath) {
     const rawText = await readImageText(payload.imagePath);
-    return reviewFromText(rawText, "share", { imagePath: payload.imagePath });
+    return reviewFromText(rawText, "share", {
+      imagePath: payload.imagePath,
+      hints: await findEntities(rawText),
+    });
   }
-  if (payload.text) return reviewFromText(payload.text, "share");
+  if (payload.text) {
+    return reviewFromText(payload.text, "share", { hints: await findEntities(payload.text) });
+  }
   throw new NothingToRead();
 }
