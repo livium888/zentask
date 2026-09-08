@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { ReviewCard } from "./components/ReviewCard";
 import { TaskList } from "./components/TaskList";
-import { captureFromImage, NothingToRead, reviewFromText } from "./lib/capture";
+import { captureFromImage, captureFromShare, NothingToRead, reviewFromText } from "./lib/capture";
 import { createStore, type TaskStore } from "./lib/db";
 import { isOcrAvailable, OcrUnavailable } from "./lib/ocr";
+import { clearShared, onShareReceived, takeShared, type SharePayload } from "./lib/share-target";
 import type { PendingReview, Task } from "./types";
 
 /**
@@ -41,6 +42,58 @@ export function App() {
       cancelled = true;
     };
   }, [refresh]);
+
+  const acceptShare = useCallback(
+    async (payload: SharePayload) => {
+      if (!store) return;
+      setBusy(true);
+      try {
+        const review = await captureFromShare(payload);
+        await store.addPending(review);
+        await clearShared();
+        await refresh(store);
+      } catch (error) {
+        // A share that reads as nothing is still consumed: leaving it queued
+        // would offer the same dud every time the app is opened.
+        await clearShared();
+        setNote(error instanceof NothingToRead ? "Nothing to read in that." : "That didn't work.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [refresh, store],
+  );
+
+  // Shares arrive two ways: on the intent that launched the app, and as an
+  // event when it was already running. Coming back to the foreground is
+  // checked too, since that is when a share can have been missed.
+  useEffect(() => {
+    if (!store) return;
+    let handle: Awaited<ReturnType<typeof onShareReceived>>;
+    let cancelled = false;
+
+    const check = async () => {
+      const payload = await takeShared();
+      if (payload && !cancelled) await acceptShare(payload);
+    };
+
+    void check();
+    void onShareReceived((payload) => void acceptShare(payload)).then((registered) => {
+      if (cancelled) void registered?.remove();
+      else handle = registered;
+    });
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      cancelled = true;
+      void handle?.remove();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [acceptShare, store]);
 
   async function capture(source: "camera" | "gallery") {
     if (!store || busy) return;
@@ -113,7 +166,9 @@ export function App() {
     <main className="mx-auto flex min-h-full max-w-md flex-col px-5 pb-32 pt-8">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">ZenTask</h1>
-        <p className="mt-1 text-sm text-muted">Photograph it. We'll turn it into the thing you have to do.</p>
+        <p className="mt-1 text-sm text-muted">
+          Photograph it, or share it here. We'll turn it into the thing you have to do.
+        </p>
       </header>
 
       {degraded && (

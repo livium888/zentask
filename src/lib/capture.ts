@@ -3,6 +3,7 @@ import type { PendingReview, TaskSource } from "@/types";
 import { extractTask } from "./extract";
 import { newId } from "./db/types";
 import { readImageText } from "./ocr";
+import type { SharePayload } from "./share-target";
 
 /**
  * Picture in, proposed task out — the one path that has to stay fast.
@@ -59,4 +60,19 @@ export async function captureFromImage(source: "camera" | "gallery"): Promise<Pe
   const path = await pickImage(source);
   const rawText = await readImageText(path);
   return reviewFromText(rawText, source, { imagePath: path });
+}
+
+/**
+ * Something handed over by another app through the share sheet.
+ *
+ * A picture is read the same way a photographed one is; shared text is already
+ * text and skips OCR entirely, which is why sharing a message is instant.
+ */
+export async function captureFromShare(payload: SharePayload): Promise<PendingReview> {
+  if (payload.imagePath) {
+    const rawText = await readImageText(payload.imagePath);
+    return reviewFromText(rawText, "share", { imagePath: payload.imagePath });
+  }
+  if (payload.text) return reviewFromText(payload.text, "share");
+  throw new NothingToRead();
 }

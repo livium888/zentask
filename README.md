@@ -28,6 +28,23 @@ field here has to earn its place against that.
 3. **Ask.** The proposal lands in a review queue with the text it came from one
    tap away. Nothing files itself.
 
+## Ways in
+
+The camera is the main one, but not the only one. **Share to ZenTask** appears
+in Android's share sheet wherever a picture or some text can be shared, so a
+post, a message, a screenshot or a photo already on the phone reaches the same
+review queue without opening the app first. Shared text skips OCR entirely, so
+it is instant.
+
+A share never becomes a task on its own. It queues like every other capture and
+waits for the same single tap.
+
+The native side (`ShareTargetPlugin.java`) copies a shared image out of the
+sending app's `content://` URI into our own cache before anything reads it —
+that grant is revoked the moment the sender goes away, and OCR cannot open it
+regardless. Only the first image of a multi-share is taken: one share should be
+one decision.
+
 When the rules cannot reduce a capture to something confident, the app says so
 and hands you an editable line rather than inventing a task. An optional cloud
 pass can take over that case later; the app is fully usable without it.

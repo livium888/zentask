@@ -10,6 +10,18 @@ import { reportCapture } from "@/lib/report";
  * rather than a re-do, and the raw text stays one tap away — the extractor is
  * allowed to be wrong, but it is never allowed to hide what it read.
  */
+const SOURCE_LABELS: Record<string, string> = {
+  camera: "from a photo",
+  gallery: "from a picture",
+  screenshot: "from a screenshot",
+  share: "shared to ZenTask",
+  manual: "typed",
+};
+
+function sourceLabel(source: string): string {
+  return SOURCE_LABELS[source] ?? `from ${source}`;
+}
+
 export function ReviewCard({
   review,
   onConfirm,
@@ -53,7 +65,7 @@ export function ReviewCard({
       />
 
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-        <span>from a {review.source === "camera" ? "photo" : review.source}</span>
+        <span>{sourceLabel(review.source)}</span>
         {review.proposedDueAt !== undefined && (
           <span className="rounded-full bg-white/5 px-2 py-0.5">
             {formatDue(review.proposedDueAt)}
