@@ -91,6 +91,17 @@ update your own app under the same identity.
 Create one, once, on a machine you control:
 
 ```bash
+bash scripts/setup-signing.sh
+```
+
+It generates the keystore, and — if you have the GitHub CLI — sets the four
+repository secrets for you. Passwords are read without echo and passed through
+the environment or stdin rather than as arguments, so they do not land in `ps`
+or your shell history. It refuses to overwrite an existing keystore.
+
+By hand, if you prefer:
+
+```bash
 keytool -genkeypair -v \
   -keystore zentask-release.jks \
   -alias zentask \
